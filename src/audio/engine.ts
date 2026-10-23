@@ -20,7 +20,11 @@ interface ScheduledTask {
 
 export class AudioEngine {
   private ctx: AudioContext | null = null
-  private master: GainNode | null = null
+  /** 音乐轨（琴声）与战斗音效轨的总线：独立音量（工单 06，SPEC 故事 23） */
+  private music: GainNode | null = null
+  private sfx: GainNode | null = null
+  /** 启动前记住的音量（start() 时生效；setVolumes 可在任意时刻调用） */
+  private volumes = { music: 1, sfx: 1 }
   private pumpTimer: ReturnType<typeof setInterval> | null = null
   private readonly queue: ScheduledTask[] = []
 
@@ -34,8 +38,12 @@ export class AudioEngine {
     this.ctx = ctx
     const master = ctx.createGain()
     master.gain.value = 0.9
-    master.connect(ctx.destination)
-    this.master = master
+    master.connect(ctx.destination) // 总线终点（音乐/音效两轨皆汇于此）
+    this.music = ctx.createGain()
+    this.music.connect(master)
+    this.sfx = ctx.createGain()
+    this.sfx.connect(master)
+    this.applyVolumes()
     if (ctx.state === 'suspended') await ctx.resume()
     this.pumpTimer = setInterval(() => this.pumpOnce(), PUMP_INTERVAL_MS)
   }
@@ -47,9 +55,29 @@ export class AudioEngine {
     return this.ctx
   }
 
-  /** 所有声音的目的节点（后续工单在此分出音乐/音效音量） */
-  get destination(): AudioNode {
-    return this.master ?? this.context.destination
+  /** 音乐轨（琴声）目的节点：钢琴接这里；与战斗音效轨互不牵连 */
+  get musicBus(): AudioNode {
+    return this.music ?? this.context.destination
+  }
+
+  /** 战斗音效轨目的节点（引擎内部合成音效统一走这里） */
+  private get sfxOut(): AudioNode {
+    return this.sfx ?? this.context.destination
+  }
+
+  /**
+   * 两轨音量（0..1，SPEC 故事 23）。增益分层：master(0.9) → music/sfx 各自
+   * 增益 → 各自声音的合成响度。默认 1/1 = 直通，出厂混音即各音效的
+   * 相对响度定标（docs/calibration.md）。
+   */
+  setVolumes(music: number, sfx: number): void {
+    this.volumes = { music, sfx }
+    this.applyVolumes()
+  }
+
+  private applyVolumes(): void {
+    if (this.music !== null) this.music.gain.value = this.volumes.music
+    if (this.sfx !== null) this.sfx.gain.value = this.volumes.sfx
   }
 
   /** 游戏主时钟（秒）。 */
@@ -108,12 +136,12 @@ export class AudioEngine {
     osc.frequency.value = accent ? 1320 : 880
     gain.gain.setValueAtTime(accent ? 0.22 : 0.14, when)
     gain.gain.exponentialRampToValueAtTime(0.001, when + 0.09)
-    osc.connect(gain).connect(this.destination)
+    osc.connect(gain).connect(this.sfxOut)
     osc.start(when)
     osc.stop(when + 0.1)
   }
 
-  /** 墨妖反击（Miss）：低频闷响，短促下沉——"挨了一下"。 */
+  /** 墨妖反击（Miss 受击，工单 06 音效清单核对项）：低频闷响，短促下沉——"挨了一下"。 */
   counterHit(when: number): void {
     const ctx = this.context
     const osc = ctx.createOscillator()
@@ -123,7 +151,7 @@ export class AudioEngine {
     osc.frequency.exponentialRampToValueAtTime(52, when + 0.16)
     gain.gain.setValueAtTime(0.3, when)
     gain.gain.exponentialRampToValueAtTime(0.001, when + 0.18)
-    osc.connect(gain).connect(this.destination)
+    osc.connect(gain).connect(this.sfxOut)
     osc.start(when)
     osc.stop(when + 0.2)
   }
@@ -146,7 +174,7 @@ export class AudioEngine {
     filter.Q.value = 0.8
     const gain = ctx.createGain()
     gain.gain.value = 0.5
-    source.connect(filter).connect(gain).connect(this.destination)
+    source.connect(filter).connect(gain).connect(this.sfxOut)
     source.start(when)
   }
 
@@ -176,7 +204,7 @@ export class AudioEngine {
     const gain = ctx.createGain()
     gain.gain.setValueAtTime(0.16 + tier * 0.1 + (finale ? 0.06 : 0), when)
     gain.gain.exponentialRampToValueAtTime(0.001, when + seconds)
-    source.connect(filter).connect(gain).connect(this.destination)
+    source.connect(filter).connect(gain).connect(this.sfxOut)
     source.start(when)
 
     // major 起：低频墨浪（正弦下潜，浪头压过来）
@@ -188,7 +216,7 @@ export class AudioEngine {
       wave.frequency.exponentialRampToValueAtTime(46, when + 0.5)
       waveGain.gain.setValueAtTime(0.22, when)
       waveGain.gain.exponentialRampToValueAtTime(0.001, when + 0.55)
-      wave.connect(waveGain).connect(this.destination)
+      wave.connect(waveGain).connect(this.sfxOut)
       wave.start(when)
       wave.stop(when + 0.6)
     }
@@ -206,7 +234,7 @@ export class AudioEngine {
         bell.frequency.value = freq
         bellGain.gain.setValueAtTime(level, when + 0.05)
         bellGain.gain.exponentialRampToValueAtTime(0.001, when + 1.9)
-        bell.connect(bellGain).connect(this.destination)
+        bell.connect(bellGain).connect(this.sfxOut)
         bell.start(when + 0.05)
         bell.stop(when + 2)
       }
@@ -230,10 +258,113 @@ export class AudioEngine {
       osc.frequency.exponentialRampToValueAtTime(freq * 0.55, when + at + 0.5)
       gain.gain.setValueAtTime(level, when + at)
       gain.gain.exponentialRampToValueAtTime(0.001, when + at + 0.8)
-      osc.connect(gain).connect(this.destination)
+      osc.connect(gain).connect(this.sfxOut)
       osc.start(when + at)
       osc.stop(when + at + 0.85)
     }
+  }
+
+  /**
+   * 命中剑气（工单 06）：每次命中必响、也必须最克制——琴声是主角，
+   * 剑气是刀光掠过的"手感层"。普通命中 = 高频白噪刀锋（90ms 急收）
+   * + 一丝金属边（三角波短促下滑）；和弦重击另叠低频顿点与高频亮片，
+   * 「双手齐落」的分量感。响度定标见 docs/calibration.md。
+   */
+  hitStrike(when: number, chord: boolean): void {
+    const ctx = this.context
+
+    // 刀锋：高通白噪急收（剑气掠过）
+    const seconds = 0.09
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3
+    }
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const edge = ctx.createBiquadFilter()
+    edge.type = 'highpass'
+    edge.frequency.value = 1800
+    const edgeGain = ctx.createGain()
+    edgeGain.gain.value = chord ? 0.11 : 0.07
+    source.connect(edge).connect(edgeGain).connect(this.sfxOut)
+    source.start(when)
+
+    // 金属边：三角波短促下滑（剑刃的"铮"）
+    const osc = ctx.createOscillator()
+    const oscGain = ctx.createGain()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(1900, when)
+    osc.frequency.exponentialRampToValueAtTime(1400, when + 0.08)
+    oscGain.gain.setValueAtTime(0.045, when)
+    oscGain.gain.exponentialRampToValueAtTime(0.001, when + 0.08)
+    osc.connect(oscGain).connect(this.sfxOut)
+    osc.start(when)
+    osc.stop(when + 0.09)
+
+    if (!chord) return
+
+    // 重击顿点：低频下潜（与墨主登场钟鼓同族，更短促）
+    const thump = ctx.createOscillator()
+    const thumpGain = ctx.createGain()
+    thump.type = 'sine'
+    thump.frequency.setValueAtTime(165, when)
+    thump.frequency.exponentialRampToValueAtTime(55, when + 0.16)
+    thumpGain.gain.setValueAtTime(0.2, when)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, when + 0.2)
+    thump.connect(thumpGain).connect(this.sfxOut)
+    thump.start(when)
+    thump.stop(when + 0.21)
+
+    // 高频亮片：齐落的清脆收笔
+    const ping = ctx.createOscillator()
+    const pingGain = ctx.createGain()
+    ping.type = 'sine'
+    ping.frequency.value = 2637
+    pingGain.gain.setValueAtTime(0.06, when)
+    pingGain.gain.exponentialRampToValueAtTime(0.001, when + 0.12)
+    ping.connect(pingGain).connect(this.sfxOut)
+    ping.start(when)
+    ping.stop(when + 0.13)
+  }
+
+  /**
+   * 终章印章（工单 06）：朱砂印落印一瞬——深鼓下沉 + 木质"扣"声。
+   * 与终章钟鸣（sustainBurst 的 finale 分支）分层互补：钟鸣铺底、
+   * 印章定音。发声时刻由渲染侧 finaleSealAt() 对准落印画面。
+   */
+  finaleSeal(when: number): void {
+    const ctx = this.context
+
+    // 深鼓：落印的分量
+    const drum = ctx.createOscillator()
+    const drumGain = ctx.createGain()
+    drum.type = 'sine'
+    drum.frequency.setValueAtTime(96, when)
+    drum.frequency.exponentialRampToValueAtTime(34, when + 0.14)
+    drumGain.gain.setValueAtTime(0.4, when)
+    drumGain.gain.exponentialRampToValueAtTime(0.001, when + 0.4)
+    drum.connect(drumGain).connect(this.sfxOut)
+    drum.start(when)
+    drum.stop(when + 0.45)
+
+    // 木质"扣"：印面压纸的一击
+    const seconds = 0.05
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2
+    }
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.value = 380
+    filter.Q.value = 1.6
+    const gain = ctx.createGain()
+    gain.gain.value = 0.18
+    source.connect(filter).connect(gain).connect(this.sfxOut)
+    source.start(when)
   }
 
   private pumpOnce(): void {
@@ -250,6 +381,7 @@ export class AudioEngine {
     this.pumpTimer = null
     void this.ctx?.close()
     this.ctx = null
-    this.master = null
+    this.music = null
+    this.sfx = null
   }
 }

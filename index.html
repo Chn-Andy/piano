@@ -209,6 +209,35 @@
       .actions button:hover {
         box-shadow: 0 2px 10px rgba(43, 42, 38, 0.25);
       }
+      /* ── 设置（工单 06）── */
+      .settings-box {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        width: min(560px, 88vw);
+        padding: 20px 26px;
+        border: 1px solid #d8d2c2;
+        border-radius: 10px;
+        background: rgba(250, 247, 239, 0.7);
+      }
+      .setting-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .setting-row label {
+        font-size: 16px;
+        color: #2b2a26;
+      }
+      .setting-row label b {
+        color: #8a6d1f;
+        margin-left: 6px;
+      }
+      .setting-row input[type='range'] {
+        width: 100%;
+        accent-color: #37322a;
+        cursor: pointer;
+      }
       /* ── 结算 ── */
       .rank-big {
         font-size: 128px;

@@ -73,6 +73,8 @@ const COUNTER_FLASH = 0.35 // 挨打红晕（秒）
 
 /** 余韵窗口结束后演出残响（淡出尾巴；窗口内是主体） */
 const SUSTAIN_TAIL = 0.7
+/** 演出全程进度中题字（终章为朱砂印）浮现的时刻（drawSustain 第五节） */
+const SUSTAIN_LABEL_P = 0.12
 /** 受击顿帧：重击/击杀后战场的一瞬冻结（下落音符绝不同冻——节奏优先） */
 const HIT_STOP = 0.075
 /** 墨主登场演出的时长 */
@@ -106,6 +108,16 @@ const TIER_STYLE: Record<'Perfect' | 'Good' | 'Miss', { label: string; color: st
 }
 
 const COUNT_NUMERALS = ['四', '三', '二', '一']
+
+/** 一次余韵演出的全程时长（谱面时间轴）：主体窗口 + 残响尾巴 */
+export function sustainLife(s: SustainEvent): number {
+  return Math.max(0.35, s.windowEnd - s.time) + SUSTAIN_TAIL
+}
+
+/** 终章朱砂印的落印时刻（谱面时间轴）：音频壳据此准点调度印章音效（工单 06） */
+export function finaleSealAt(s: SustainEvent): number {
+  return s.time + SUSTAIN_LABEL_P * sustainLife(s)
+}
 
 /** 确定性伪随机 [0,1)（与墨妖剪影同款；粒子/墨晕因此帧间稳定、可复现） */
 function hash2(a: number, b: number): number {
@@ -645,7 +657,7 @@ export class Renderer {
 
     for (const s of m.sustains) {
       const age = m.t - s.time
-      const life = Math.max(0.35, s.windowEnd - s.time) + SUSTAIN_TAIL
+      const life = sustainLife(s)
       if (age < 0 || age > life) continue
 
       const tierIndex = s.tier === 'grand' ? 2 : s.tier === 'major' ? 1 : 0
@@ -723,7 +735,7 @@ export class Renderer {
       )
 
       // 五、档位题字：小韵淡题、剑鸣大书；终章另盖朱砂印
-      const labelEnv = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - 0.12) / 0.76)))
+      const labelEnv = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - SUSTAIN_LABEL_P) / (1 - SUSTAIN_LABEL_P))))
       if (labelEnv > 0.01) {
         const size = show.labelSize
         const y = cy + baseR * 0.2 - p * 30
