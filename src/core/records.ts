@@ -6,11 +6,11 @@
  */
 
 import type { DifficultyName } from './chart'
-import type { Rank } from './rating'
+import type { Rating } from './rating'
 
 /** 一条最佳纪录：评级 + 最大连击 */
 export interface BestRecord {
-  readonly rank: Rank
+  readonly rating: Rating
   readonly maxCombo: number
 }
 
@@ -26,11 +26,14 @@ export interface KeyValueStore {
   setItem(key: string, value: string): void
 }
 
-/** 存储键（版本化：结构不兼容时升版本号，旧键任其沉没） */
-export const RECORDS_KEY = 'xinqin.records.v1'
+/**
+ * 存储键（版本化：结构不兼容时升版本号，旧键任其沉没）。
+ * v2：纪录字段 rank → rating（GLOSSARY 评级词条命名对齐，2026-10-24）。
+ */
+export const RECORDS_KEY = 'xinqin.records.v2'
 
 /** 评级序：S > A > B > C */
-const RANK_ORDER: Record<Rank, number> = { S: 3, A: 2, B: 1, C: 0 }
+const RATING_ORDER: Record<Rating, number> = { S: 3, A: 2, B: 1, C: 0 }
 
 /** 读取纪录；存储为空或内容损坏 → 空纪录（不抛错——纪录不是启动前提） */
 export function loadRecords(store: KeyValueStore): Records {
@@ -64,9 +67,9 @@ export function bestRecordFor(
 }
 
 /** 新成绩是否优于旧纪录（评级优先，同级比最大连击） */
-function beats(record: BestRecord, rank: Rank, maxCombo: number): boolean {
-  if (RANK_ORDER[rank] !== RANK_ORDER[record.rank]) {
-    return RANK_ORDER[rank] > RANK_ORDER[record.rank]
+function beats(record: BestRecord, rating: Rating, maxCombo: number): boolean {
+  if (RATING_ORDER[rating] !== RATING_ORDER[record.rating]) {
+    return RATING_ORDER[rating] > RATING_ORDER[record.rating]
   }
   return maxCombo > record.maxCombo
 }
@@ -77,14 +80,14 @@ export function recordResult(
   songId: string,
   difficulty: DifficultyName,
   outcome: 'victory' | 'defeat',
-  rank: Rank,
+  rating: Rating,
   maxCombo: number,
 ): { records: Records; improved: boolean } {
   if (outcome === 'defeat') return { records, improved: false }
   const previous = bestRecordFor(records, songId, difficulty)
-  if (previous !== undefined && !beats(previous, rank, maxCombo)) {
+  if (previous !== undefined && !beats(previous, rating, maxCombo)) {
     return { records, improved: false }
   }
-  const song: SongRecords = { ...records[songId], [difficulty]: { rank, maxCombo } }
+  const song: SongRecords = { ...records[songId], [difficulty]: { rating, maxCombo } }
   return { records: { ...records, [songId]: song }, improved: true }
 }

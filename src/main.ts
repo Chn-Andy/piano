@@ -23,8 +23,8 @@ import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
 import type { KeyBinding, KeyLayout } from './core/keymap'
 import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/records'
 import type { KeyValueStore, Records } from './core/records'
-import { rankFor } from './core/rating'
-import type { Rank } from './core/rating'
+import { ratingFor } from './core/rating'
+import type { Rating } from './core/rating'
 import { judgedTime, loadSettings, saveSettings } from './core/settings'
 import type { Settings } from './core/settings'
 import { Simulator } from './core/simulator'
@@ -137,7 +137,7 @@ let endedFreezeT: number | null = null
 /** 结算画面允许出现的最早音频时钟时刻（终章宽限） */
 let overlayDueAt = 0
 /** 结算预计算：评级与本局是否刷新纪录（胜负事件到达时写定） */
-let settlement: { rank: Rank; improved: boolean } | null = null
+let settlement: { rating: Rating; improved: boolean } | null = null
 /** 暂停前的画面（继续时回到倒计时或演奏） */
 let pausedFrom: 'countdown' | 'playing' = 'playing'
 
@@ -194,7 +194,7 @@ function pianoPreviewHtml(keys: readonly KeyBinding[], lit?: ReadonlySet<string>
 function bestHtml(songId: string, diff: DifficultyName): string {
   const best = bestRecordFor(records, songId, diff)
   if (best === undefined) return '<span class="diff-best">未挑战</span>'
-  return `<span class="diff-best"><span class="best-rank rank-${best.rank}">${best.rank}</span>连击 ${best.maxCombo}</span>`
+  return `<span class="diff-best"><span class="best-rating rating-${best.rating}">${best.rating}</span>连击 ${best.maxCombo}</span>`
 }
 
 function showLibrary(): void {
@@ -400,12 +400,12 @@ function showSettlement(): void {
   outcomeShown = true
   const summary = sim.summary()
   const won = outcomeResult === 'victory'
-  const rank = settlement?.rank ?? 'C'
+  const rating = settlement?.rating ?? 'C'
   showOverlay(`
     <div class="screen">
       <h2>${won ? '斗琴告捷' : '斗琴落败'}</h2>
       <p>${song.title} · ${DIFFICULTY_LABELS[difficulty]} · ${won ? '墨主伏诛，全场清空' : '胜负未分，琴音再起'}</p>
-      <div class="rank-big rank-${rank}">${rank}</div>
+      <div class="rating-big rating-${rating}">${rating}</div>
       ${settlement?.improved === true ? '<div class="new-record">新纪录</div>' : ''}
       <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b></p>
       <p>完美 ${summary.perfect} · 良好 ${summary.good} · 失误 ${summary.miss}</p>
@@ -553,15 +553,15 @@ function collectBattle(events: readonly BattleEvent[]): void {
       screen = 'ended'
       // 结算预计算：评级 + 纪录（胜局才入册，失败不更新最佳）
       const summary = sim.summary()
-      const rank = rankFor(summary, e.result)
+      const rating = ratingFor(summary, e.result)
       let improved = false
       if (e.result === 'victory') {
-        const result = recordResult(records, song.id, difficulty, 'victory', rank, summary.maxCombo)
+        const result = recordResult(records, song.id, difficulty, 'victory', rating, summary.maxCombo)
         records = result.records
         improved = result.improved
         if (improved) saveRecords(storage, records)
       }
-      settlement = { rank, improved }
+      settlement = { rating, improved }
       // 终章宽限：收势没演完不掀结算幕布（无终章则立即）
       const finale = sustains[sustains.length - 1]
       const finaleEnd = finale !== undefined && finale.finale ? roundStartAt + finale.windowEnd : 0

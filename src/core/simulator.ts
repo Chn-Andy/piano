@@ -41,7 +41,7 @@ export interface JudgmentEvent {
   readonly time: number
   /** 按键时刻相对音符命中时刻的偏移（秒，正=迟）；Miss 无按键，不携带 */
   readonly offset?: number
-  /** 事件之后的连击数 */
+  /** 事件之后的连击 */
   readonly combo: number
 }
 
@@ -222,7 +222,7 @@ export class Simulator {
     }
   }
 
-  /** 当前连击数（GLOSSARY：连击） */
+  /** 当前连击（GLOSSARY：连击） */
   get combo(): number {
     return this.comboCount
   }

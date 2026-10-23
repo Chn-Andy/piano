@@ -15,7 +15,7 @@ import { RATING, SUSTAIN } from './config'
 import type { BattleSummary } from './simulator'
 
 /** 评级四级（GLOSSARY 顺序 S > A > B > C） */
-export type Rank = 'S' | 'A' | 'B' | 'C'
+export type Rating = 'S' | 'A' | 'B' | 'C'
 
 /** 整场精度 0..1：Perfect 全额、Good 折算（与余韵表现分一致）；零音符记 0 */
 export function accuracyFor(summary: BattleSummary): number {
@@ -25,7 +25,7 @@ export function accuracyFor(summary: BattleSummary): number {
 }
 
 /** 结算评级映射：胜局按精度与失误分 S/A/B；败局一律 C。 */
-export function rankFor(summary: BattleSummary, outcome: 'victory' | 'defeat'): Rank {
+export function ratingFor(summary: BattleSummary, outcome: 'victory' | 'defeat'): Rating {
   if (outcome === 'defeat') return 'C'
   const accuracy = accuracyFor(summary)
   if (summary.miss === 0 && accuracy >= RATING.S_ACCURACY) return 'S'
