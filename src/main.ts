@@ -25,12 +25,15 @@ import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/re
 import type { KeyValueStore, Records } from './core/records'
 import { rankFor } from './core/rating'
 import type { Rank } from './core/rating'
+import { judgedTime, loadSettings, saveSettings } from './core/settings'
+import type { Settings } from './core/settings'
 import { Simulator } from './core/simulator'
 import type { BattleEvent, GameEvent } from './core/simulator'
 import type { SustainEvent } from './core/sustain'
 import { markTutorialDone, tutorialDone } from './core/tutorial'
 import { Renderer } from './render/renderer'
 import type { HitFeedback, JudgmentFlash } from './render/renderer'
+import { finaleSealAt } from './render/renderer'
 
 /** 倒计时拍数与拍长（120 BPM，与合成木鱼声对应） */
 const COUNT_BEATS = 4
@@ -46,8 +49,16 @@ const FINALE_GRACE = 0.9
 /** 键位引导时长上限（SPEC 故事 1：约 30 秒；完成或 Esc 提前退出） */
 const TUTORIAL_SECONDS = 30
 
-/** 画面（SPEC：单页无刷新，曲库 → 斗琴 → 结算；引导与暂停为工单 05 增设） */
-type Screen = 'title' | 'tutorial' | 'library' | 'countdown' | 'playing' | 'paused' | 'ended'
+/** 画面（SPEC：单页无刷新，曲库 → 斗琴 → 结算；引导/暂停为工单 05、设置为工单 06 增设） */
+type Screen =
+  | 'title'
+  | 'tutorial'
+  | 'library'
+  | 'settings'
+  | 'countdown'
+  | 'playing'
+  | 'paused'
+  | 'ended'
 
 const params = new URLSearchParams(window.location.search)
 const AUTO = params.get('auto')
@@ -62,6 +73,7 @@ const DEV_SONG = songById(params.get('song') ?? 'canon-in-d')
 /**
  * 开发验证钩子（与 ?auto 同例）：暴露只读对局时钟与局面，供浏览器自动化
  * 按游戏自身的音频主时钟对准演出时刻（墙钟会因音频挂起而漂移）。
+ * 判定计数（工单 06）供偏移前后差异的程序化实测。
  */
 const debugView: {
   phase: Screen
@@ -69,7 +81,10 @@ const debugView: {
   combo: number
   sustains: number
   tutorialLit: number
-} = { phase: 'title', t: 0, combo: 0, sustains: 0, tutorialLit: 0 }
+  perfect: number
+  good: number
+  miss: number
+} = { phase: 'title', t: 0, combo: 0, sustains: 0, tutorialLit: 0, perfect: 0, good: 0, miss: 0 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
@@ -77,12 +92,14 @@ const overlay = document.querySelector<HTMLElement>('#overlay')!
 if (canvas === null || overlay === null) throw new Error('页面缺少 #stage 或 #overlay')
 
 const engine = new AudioEngine()
-const piano = new Piano(() => engine.context, () => engine.destination)
+const piano = new Piano(() => engine.context, () => engine.musicBus)
 const renderer = new Renderer(canvas)
 
 /** 本机持久化（浏览器本地存储；纯层经 KeyValueStore 注入） */
 const storage: KeyValueStore = window.localStorage
 let records: Records = loadRecords(storage)
+let settings: Settings = loadSettings(storage)
+engine.setVolumes(settings.musicVolume, settings.sfxVolume) // start() 前记下，启动即生效
 
 /* ── 对局上下文 ────────────────────────────────────────────────────── */
 let song: SongEntry = DEV_SONG ?? SONGS[0]!
@@ -192,6 +209,7 @@ function showLibrary(): void {
       </div>
       <div class="actions">
         <button id="btn-start">开战（回车）</button>
+        <button id="btn-settings" class="secondary">设置（音量 / 偏移）</button>
       </div>
       <p class="hint">↑↓ 选曲 · ←→ 选难度 · 回车 开战 · 白键 A S D F G H J，黑键嵌于其间</p>
     </div>`,
@@ -206,6 +224,67 @@ function showLibrary(): void {
   overlay.querySelector('#btn-start')?.addEventListener('click', () => {
     void beginBattle(SONGS[libSongIndex]!, libDifficulty)
   })
+  overlay.querySelector('#btn-settings')?.addEventListener('click', showSettings)
+}
+
+/**
+ * 设置面板（工单 06，SPEC 故事 22/23）：音画偏移与两轨音量。
+ * 改动即时生效并持久化（每次 input 都写入本地存储，无"保存"按钮——
+ * 设置没有需要回滚的原子性）。偏移方向语义：正 = 判定时刻整体前移。
+ */
+function showSettings(): void {
+  screen = 'settings'
+  const pct = (v: number): string => `${Math.round(v * 100)}%`
+  const offsetLabel = (ms: number): string => (ms === 0 ? '0 毫秒' : `${ms > 0 ? '+' : ''}${ms} 毫秒`)
+  showOverlay(`
+    <div class="screen">
+      <h2>设置</h2>
+      <div class="settings-box">
+        <div class="setting-row">
+          <label for="sl-offset">音画偏移 <b id="offset-value">${offsetLabel(settings.offsetMs)}</b></label>
+          <input id="sl-offset" type="range" min="-150" max="150" step="5" value="${settings.offsetMs}">
+          <p class="hint">判定公平性校准：正 = 你的按键被判定得整体更「早」，负 = 更「晚」。
+          若明明按准了、结果总偏「迟」（画面比声音慢的设备常见），向正调；总偏「早」则向负调。范围 ±150 毫秒。</p>
+        </div>
+        <div class="setting-row">
+          <label for="sl-music">琴声音量 <b id="music-value">${pct(settings.musicVolume)}</b></label>
+          <input id="sl-music" type="range" min="0" max="100" step="1" value="${Math.round(settings.musicVolume * 100)}">
+        </div>
+        <div class="setting-row">
+          <label for="sl-sfx">战斗音效音量 <b id="sfx-value">${pct(settings.sfxVolume)}</b></label>
+          <input id="sl-sfx" type="range" min="0" max="100" step="1" value="${Math.round(settings.sfxVolume * 100)}">
+          <p class="hint">琴声是你弹出的钢琴（音乐轨）；剑气、受击、余韵等是战斗音效（音效轨），两轨独立调节。</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btn-settings-back">返回曲库（Esc）</button>
+      </div>
+    </div>`,
+  )
+  const persist = (next: Settings): void => {
+    settings = next
+    saveSettings(storage, settings)
+  }
+  overlay.querySelector<HTMLInputElement>('#sl-offset')?.addEventListener('input', (ev) => {
+    const offsetMs = Number((ev.target as HTMLInputElement).value)
+    persist({ ...settings, offsetMs })
+    overlay.querySelector('#offset-value')!.textContent = offsetLabel(offsetMs)
+  })
+  overlay.querySelector<HTMLInputElement>('#sl-music')?.addEventListener('input', (ev) => {
+    const musicVolume = Number((ev.target as HTMLInputElement).value) / 100
+    persist({ ...settings, musicVolume })
+    engine.setVolumes(musicVolume, settings.sfxVolume) // 即时生效
+    overlay.querySelector('#music-value')!.textContent = pct(musicVolume)
+  })
+  overlay.querySelector<HTMLInputElement>('#sl-sfx')?.addEventListener('input', (ev) => {
+    const sfxVolume = Number((ev.target as HTMLInputElement).value) / 100
+    persist({ ...settings, sfxVolume })
+    engine.setVolumes(settings.musicVolume, sfxVolume)
+    overlay.querySelector('#sfx-value')!.textContent = pct(sfxVolume)
+  })
+  overlay.querySelector('#btn-settings-back')?.addEventListener('click', showLibrary)
+  // 键盘玩家：焦点落在偏移滑条上，方向键即微调（原生 range 行为）
+  overlay.querySelector<HTMLInputElement>('#sl-offset')?.focus()
 }
 
 function showTitle(): void {
@@ -376,8 +455,7 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
 function scheduleAutoplay(): void {
   for (const note of chart.notes) {
     engine.scheduleAhead(roundStartAt + note.time, (when) => {
-      const chartTime = when - roundStartAt
-      press(note.lane, chartTime)
+      press(note.lane, when - roundStartAt)
       // 自动弹奏无物理 keyup：即时松开，长按去重才不会吞掉同键后续音符
       held.delete(note.lane)
       sim.keyUp(note.lane)
@@ -428,8 +506,10 @@ function collectBattle(events: readonly BattleEvent[]): void {
   for (const e of events) {
     if (e.type === 'strike') {
       hits.push({ at: e.time, monsterId: e.monsterId, chord: false })
+      engine.hitStrike(engine.now() + PLAY_EPSILON, false) // 命中剑气（工单 06）
     } else if (e.type === 'chord') {
       hits.push({ at: e.time, monsterId: e.monsterId, chord: true })
+      engine.hitStrike(engine.now() + PLAY_EPSILON, true) // 和弦重击分档
     } else if (e.type === 'slain') {
       slains.push({ at: e.time, monsterId: e.monsterId })
       engine.monsterSlain(engine.now() + PLAY_EPSILON)
@@ -443,6 +523,10 @@ function collectBattle(events: readonly BattleEvent[]): void {
         e.tier === 'grand' ? 2 : e.tier === 'major' ? 1 : 0,
         e.finale,
       )
+      if (e.finale) {
+        // 终章印章：按渲染侧落印时刻准点盖下（lookahead 提前注册）
+        engine.scheduleAhead(roundStartAt + finaleSealAt(e), (w) => engine.finaleSeal(w))
+      }
     } else if (e.type === 'outcome') {
       outcomeResult = e.result
       endedAt = engine.now()
@@ -470,13 +554,15 @@ let endedAt = 0
 
 /**
  * 按键按下（真人与自动弹奏共用管线）。
- * chartTime 为谱面时间轴时刻；audioWhen 为对应音频时钟发声时刻。
+ * chartTime 为谱面时间轴上的物理按键时刻；判定时刻由音画偏移平移得出
+ * （工单 06：偏移只在进模拟器前这一处生效，琴声不受偏移影响——
+ * 钢琴按哪刻响哪刻，校准的是"判定"而非"弹奏"）。
  */
 function press(lane: Lane, chartTime: number): void {
   const binding = layout.keys[lane]
   if (binding === undefined) return
   held.add(lane)
-  const outcome = sim.keyDown(lane, chartTime)
+  const outcome = sim.keyDown(lane, judgedTime(chartTime, settings.offsetMs))
   // 按键即出琴声（无论判定结果——这是钢琴，不是音效机）
   if (!outcome.repeat) {
     piano.play(binding.note, roundStartAt + chartTime + PLAY_EPSILON)
@@ -517,6 +603,11 @@ function onKeyDown(ev: KeyboardEvent): void {
       } else if (ev.key === 'Enter') {
         void beginBattle(SONGS[libSongIndex]!, libDifficulty)
       }
+      return
+    }
+    case 'settings': {
+      // 滑条方向键微调交给原生 range；Esc/回车收起回曲库
+      if (ev.key === 'Escape' || ev.key === 'Enter') showLibrary()
       return
     }
     case 'countdown':
@@ -641,6 +732,10 @@ function frame(): void {
   debugView.t = t
   debugView.combo = sim.combo
   debugView.sustains = sustains.length
+  const summaryNow = sim.summary()
+  debugView.perfect = summaryNow.perfect
+  debugView.good = summaryNow.good
+  debugView.miss = summaryNow.miss
 
   renderer.draw({
     chart,
