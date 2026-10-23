@@ -31,8 +31,8 @@ describe('评级映射（S/A/B/C）', () => {
     expect(rankFor(summary({ perfect: 34, good: 5 }), 'victory')).toBe('A')
   })
 
-  it('无失误但精度不足 S（Good 居多 0.6）→ A', () => {
-    expect(rankFor(summary({ perfect: 0, good: 100 }), 'victory')).toBe('A')
+  it('无失误但精度不足 A（全 Good = 0.6）→ B：零失误只在 S 门槛起作用', () => {
+    expect(rankFor(summary({ perfect: 0, good: 100 }), 'victory')).toBe('B')
   })
 
   it('精度高但有失误 → 失误封死 S，得 A', () => {
