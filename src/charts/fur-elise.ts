@@ -1,31 +1,18 @@
 /**
  * 致爱丽丝（fur-elise）三难度谱面装载（工单 05 转换产物）。
- * 重新经 createChart 装配：契约不变式在运行时再验一遍，产物损坏即启动报错。
+ * JSON 契约与 createChart 再校验见 ./shared（三曲共用）。
  */
 
 import easyJson from './fur-elise/easy.json'
 import hardJson from './fur-elise/hard.json'
 import mediumJson from './fur-elise/medium.json'
-import { createChart } from '../core/chart'
-import type { Chart, ChartMeta, DifficultyName, Phrase } from '../core/chart'
-
-interface ChartJson {
-  notes: readonly { id: number; time: number; lane: number; chordId?: number }[]
-  meta: ChartMeta
-  phrases: readonly Phrase[]
-}
-
-function load(json: ChartJson): Chart {
-  return createChart(
-    json.notes.map((n) => (n.chordId === undefined ? [n.time, n.lane] : [n.time, n.lane, n.chordId])),
-    // JSON 产物由转换器生成并经 createChart 全量校验；此处仅放宽类型面
-    { meta: json.meta, phrases: json.phrases },
-  )
-}
+import type { Chart, DifficultyName } from '../core/chart'
+import { loadChart } from './shared'
+import type { ChartJson } from './shared'
 
 /** 三难度谱面（键：难度名） */
 export const FUR_ELISE_CHARTS: Record<DifficultyName, Chart> = {
-  easy: load(easyJson as unknown as ChartJson),
-  medium: load(mediumJson as unknown as ChartJson),
-  hard: load(hardJson as unknown as ChartJson),
+  easy: loadChart(easyJson as unknown as ChartJson),
+  medium: loadChart(mediumJson as unknown as ChartJson),
+  hard: loadChart(hardJson as unknown as ChartJson),
 }

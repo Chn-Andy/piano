@@ -677,22 +677,19 @@ function onVisibilityChange(): void {
 
 /* ── 主循环 ────────────────────────────────────────────────────────── */
 
+/** 就地裁剪：删去已超过保留期的条目（倒序遍历，splice 不漏删） */
+function pruneExpired<T>(list: T[], t: number, keep: number, at: (item: T) => number): void {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (t - at(list[i]!) > keep) list.splice(i, 1)
+  }
+}
+
 function prune(t: number): void {
-  for (let i = flashes.length - 1; i >= 0; i -= 1) {
-    if (t - flashes[i]!.at > FLASH_KEEP) flashes.splice(i, 1)
-  }
-  for (let i = hits.length - 1; i >= 0; i -= 1) {
-    if (t - hits[i]!.at > FLASH_KEEP) hits.splice(i, 1)
-  }
-  for (let i = slains.length - 1; i >= 0; i -= 1) {
-    if (t - slains[i]!.at > FLASH_KEEP) slains.splice(i, 1)
-  }
-  for (let i = counters.length - 1; i >= 0; i -= 1) {
-    if (t - counters[i]!.at > FLASH_KEEP) counters.splice(i, 1)
-  }
-  for (let i = sustains.length - 1; i >= 0; i -= 1) {
-    if (t - sustains[i]!.windowEnd > SUSTAIN_KEEP) sustains.splice(i, 1)
-  }
+  pruneExpired(flashes, t, FLASH_KEEP, (f) => f.at)
+  pruneExpired(hits, t, FLASH_KEEP, (h) => h.at)
+  pruneExpired(slains, t, FLASH_KEEP, (s) => s.at)
+  pruneExpired(counters, t, FLASH_KEEP, (c) => c.at)
+  pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
 }
 
 /** 非战斗画面的背景板：所选谱面的空音场（键位轨道与判定线，无音符无怪物） */

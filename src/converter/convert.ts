@@ -7,6 +7,7 @@
 
 import { createChart } from '../core/chart'
 import type { Chart, DifficultyName, Phrase } from '../core/chart'
+import { pitchClassOf } from '../core/pitch'
 import type { SourceKey, SourceSong } from './midiSource'
 import {
   CHORD_SOURCE_WINDOW,
@@ -56,18 +57,6 @@ function chromaticLane(pitch: number, keys: readonly string[]): number {
   return p - low
 }
 
-/** 调根音名 → 音高级（'D'→2、'F#'→6、'Bb'→10）；无法解析按 C 处理 */
-function rootPc(root: string): number {
-  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[root[0]?.toUpperCase() ?? '']
-  if (base === undefined) return 0
-  let pc = base
-  for (const char of root.slice(1)) {
-    if (char === '#') pc += 1
-    else if (char === 'b') pc -= 1
-  }
-  return ((pc % 12) + 12) % 12
-}
-
 /**
  * 移调到白键域（简单难度）：大调根音 → C、小调根音 → a，
  * 取绝对值最小的半音数（±6），使全曲音级落在白键上。
@@ -75,7 +64,7 @@ function rootPc(root: string): number {
 function whiteKeyTranspose(key: SourceKey | null): number {
   if (key === null) return 0
   const target = key.scale === 'minor' ? 9 : 0
-  return (((target - rootPc(key.root) + 6) % 12) + 12) % 12 - 6
+  return (((target - pitchClassOf(key.root) + 6) % 12) + 12) % 12 - 6
 }
 
 /** 量化后的音符（srcTime 供源同击聚类；音高用于取舍） */

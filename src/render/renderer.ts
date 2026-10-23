@@ -119,7 +119,7 @@ export function finaleSealAt(s: SustainEvent): number {
   return s.time + SUSTAIN_LABEL_P * sustainLife(s)
 }
 
-/** 确定性伪随机 [0,1)（与墨妖剪影同款；粒子/墨晕因此帧间稳定、可复现） */
+/** 确定性伪随机 [0,1)（墨妖剪影、粒子、墨晕共用；因此帧间稳定、可复现） */
 function hash2(a: number, b: number): number {
   const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
   return x - Math.floor(x)
@@ -183,7 +183,7 @@ export class Renderer {
     this.drawSustain(m, W, H, judgeY)
     ctx.restore()
 
-    this.drawHud(m, geom, W, H, judgeY, zoneY)
+    this.drawHud(m, geom, W, H, judgeY)
   }
 
   /** 终章/墨主爆裂的震屏偏移（衰减正弦，确定性） */
@@ -458,14 +458,13 @@ export class Renderer {
     ctx.save()
     ctx.globalAlpha = alpha
 
-    // 剪影主体：确定性墨团轮廓
+    // 剪影主体：确定性墨团轮廓（与墨晕同族的 hash 噪声扰动，帧间稳定）
     ctx.fillStyle = lord ? '#14110d' : INK
     ctx.beginPath()
     const points = 9
     for (let k = 0; k <= points; k += 1) {
       const angle = (k / points) * Math.PI * 2
-      const noise = Math.sin(monster.id * 127.1 + (k % points) * 311.7) * 43758.5453
-      const wob = 0.82 + 0.22 * (noise - Math.floor(noise))
+      const wob = 0.82 + 0.22 * hash2(monster.id, k % points)
       const breathe = 1 + 0.02 * Math.sin(t * 1.8 + k * 1.3)
       const rr = r * wob * breathe
       const x = cx + Math.cos(angle) * rr
@@ -550,7 +549,6 @@ export class Renderer {
     W: number,
     H: number,
     judgeY: number,
-    zoneY: number,
   ): void {
     const { ctx } = this
 
@@ -612,8 +610,6 @@ export class Renderer {
       ctx.fillText(numeral, W / 2, H * 0.42)
       ctx.globalAlpha = 1
     }
-
-    void zoneY
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
