@@ -73,7 +73,8 @@ const DEV_SONG = songById(params.get('song') ?? 'canon-in-d')
 /**
  * 开发验证钩子（与 ?auto 同例）：暴露只读对局时钟与局面，供浏览器自动化
  * 按游戏自身的音频主时钟对准演出时刻（墙钟会因音频挂起而漂移）。
- * 判定计数（工单 06）供偏移前后差异的程序化实测。
+ * 判定计数（工单 06）供偏移前后差异的程序化实测；余韵档位与终章时刻
+ * （工单 07）供门面截图对准爆发/印章瞬间。
  */
 const debugView: {
   phase: Screen
@@ -84,7 +85,23 @@ const debugView: {
   perfect: number
   good: number
   miss: number
-} = { phase: 'title', t: 0, combo: 0, sustains: 0, tutorialLit: 0, perfect: 0, good: 0, miss: 0 }
+  /** 最近一次余韵的档位/是否终章/谱面时刻（无余韵时 null） */
+  sustainTier: 'minor' | 'major' | 'grand' | null
+  sustainFinale: boolean
+  sustainAt: number
+} = {
+  phase: 'title',
+  t: 0,
+  combo: 0,
+  sustains: 0,
+  tutorialLit: 0,
+  perfect: 0,
+  good: 0,
+  miss: 0,
+  sustainTier: null,
+  sustainFinale: false,
+  sustainAt: 0,
+}
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
@@ -518,6 +535,9 @@ function collectBattle(events: readonly BattleEvent[]): void {
       engine.counterHit(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'sustain') {
       sustains.push(e)
+      debugView.sustainTier = e.tier
+      debugView.sustainFinale = e.finale
+      debugView.sustainAt = e.time
       engine.sustainBurst(
         engine.now() + PLAY_EPSILON,
         e.tier === 'grand' ? 2 : e.tier === 'major' ? 1 : 0,

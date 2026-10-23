@@ -26,19 +26,19 @@ const SONGS = [
   {
     id: 'canon-in-d',
     title: '卡农',
-    midi: 'assets/fixtures/canon-in-d.mid',
+    midi: 'fixtures/canon-in-d.mid',
     dir: 'src/charts/canon',
   },
   {
     id: 'fur-elise',
     title: '致爱丽丝',
-    midi: 'assets/fixtures/fur-elise.mid',
+    midi: 'fixtures/fur-elise.mid',
     dir: 'src/charts/fur-elise',
   },
   {
     id: 'chun-jiang-hua-yue-ye',
     title: '春江花月夜',
-    midi: 'assets/fixtures/chun-jiang-hua-yue-ye.mid',
+    midi: 'fixtures/chun-jiang-hua-yue-ye.mid',
     dir: 'src/charts/chun-jiang',
   },
 ] as const

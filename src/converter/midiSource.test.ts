@@ -10,7 +10,7 @@ import { parseMidi } from './midiSource'
  * - 致爱丽丝 a 小调（0 升号）：E5 D#5 E5 … A4 的著名开头即 a 小调。
  * - 卡农 D 大调、春江花月夜 G 大调：大调报告即本调，无需换算。
  */
-const FIXTURES = join(import.meta.dirname, '..', '..', 'assets', 'fixtures')
+const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures')
 
 describe('MIDI 调号解析（调根音，非关系大调字母）', () => {
   it('小调：0 升号小调的根音是 A（a 小调），不是报告字母 C', () => {
