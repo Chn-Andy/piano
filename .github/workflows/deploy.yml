@@ -1,0 +1,56 @@
+# GitHub Pages 部署（工单 07，ADR-0009 双发之一）
+# push 到 main → 测试 + 构建 → 部署 Pages（官方 actions 的标准流）。
+# 启用方式（网页操作，无需 gh CLI）见 README「发布步骤」：
+# 仓库 Settings → Pages → Build and deployment → Source 选 "GitHub Actions"。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 允许网页上手动触发一次部署
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一条 Pages 部署，后来的顶掉先前的
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build # 产物 dist/，相对路径 base，任意子路径可静态托管
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

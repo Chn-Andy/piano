@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "charts": "tsx scripts/generate-charts.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pack:itch": "npm run build && rm -f xinqin-itch.zip && cd dist && zip -qr ../xinqin-itch.zip ."
   },
   "devDependencies": {
     "@tonejs/midi": "^2.0.28",
