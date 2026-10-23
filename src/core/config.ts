@@ -111,3 +111,16 @@ export const SUSTAIN = {
   /** 分档边界（表现分 ≥ 边界升档；minor < 边界1 ≤ major < 边界2 ≤ grand） */
   TIER_EDGES: [0.7, 0.9] as const,
 } as const
+
+/* ── 评级（工单 05，GLOSSARY：评级 S/A/B/C；ADR-0008：无独立分数系统）──
+ * 结算评级映射（rating.ts）：败局一律 C；胜局按精度分档——
+ * - S_ACCURACY 0.95：与余韵 grand（0.90）同级的仰望门槛，且要求全程零失误
+ *   （一次 Miss 就断连击招反击，不配"完胜"叙事）；
+ * - A_ACCURACY 0.80：认真玩家（九成命中、Perfect 居多）的稳定段。
+ */
+export const RATING = {
+  /** 升 S 的精度门槛（边界含；另需 miss === 0） */
+  S_ACCURACY: 0.95,
+  /** 升 A 的精度门槛（边界含） */
+  A_ACCURACY: 0.8,
+} as const
