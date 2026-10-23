@@ -9,8 +9,10 @@ import { createChart } from '../core/chart'
 import type { Chart, DifficultyName, Phrase } from '../core/chart'
 import type { SourceKey, SourceSong } from './midiSource'
 import {
+  CHORD_SOURCE_WINDOW,
   DIFFICULTY_RULES,
   LEAD_IN_SECONDS,
+  PHRASE_MAX_SPAN_BEATS,
   PHRASE_MIN_SPAN_BEATS,
   PHRASE_REST_BEATS,
   SUSTAIN_SECONDS,
@@ -76,20 +78,22 @@ function whiteKeyTranspose(key: SourceKey | null): number {
   return (((target - rootPc(key.root) + 6) % 12) + 12) % 12 - 6
 }
 
-/** 量化后的音符（音高仅用于和弦上限时的取舍与同键合并） */
+/** 量化后的音符（srcTime 供源同击聚类；音高用于取舍） */
 interface MappedNote {
   readonly time: number
+  readonly srcTime: number
   readonly pitch: number
   readonly lane: number
 }
 
-/** 事件 = 同时刻音符组（和弦候选） */
+/** 事件 = 同时刻音符组（和弦候选；其语义范围是源同击簇） */
 type Event = readonly MappedNote[]
 
 /**
  * 转换一首源曲为某一难度的谱面。
- * 流水线：移调 → 量化 → 键位映射 → 同刻分组（同键合并 + 和弦上限）→
- * 密度过滤 → 起奏平移 → 乐句切分（余韵窗口）→ 契约装配。
+ * 流水线：移调 → 量化 → 键位映射 → 同格分组（源同击聚簇：旋律优先取簇 +
+ * 同键合并 + 和弦上限）→ 密度过滤 → 起奏平移 → 乐句切分（休止检测 + 超长
+ * 强制换气与余韵窗口雕刻）→ 契约装配。
  */
 export function convertChart(
   source: SourceSong,
@@ -106,12 +110,17 @@ export function convertChart(
 
   const transpose = rule.transposeToWhite ? whiteKeyTranspose(source.key) : 0
 
-  // 量化 + 键位映射（同拍等分网格吸附；同格即同刻——和弦识别容差即网格）
+  // 量化 + 键位映射（同拍等分网格吸附；同格即同刻）。
+  // 时刻保持未圆整的网格浮点（格长 = gridBeats × beat，格数是二的幂倍数时
+  // 与 minGap 的比较精确成立）；毫秒圆整只在装配谱面前做一次——先圆整会让
+  // 网格位置在相邻毫秒间交替（如 0.208/0.209），两格间距骑在密度阈值两侧，
+  // 贪心过滤在"隔一保留"与"隔二保留"间抖动（致爱丽丝高级实测退化 0.417→0.625）。
   const mapped: MappedNote[] = source.notes
     .map((note) => {
       const pitch = note.midi + transpose
       return {
-        time: roundMs(Math.round(note.time / grid) * grid),
+        time: Math.round(note.time / grid) * grid,
+        srcTime: note.time,
         pitch,
         lane:
           rule.pitchMapping === 'diatonic'
@@ -121,7 +130,9 @@ export function convertChart(
     })
     .sort((a, b) => a.time - b.time || a.pitch - b.pitch)
 
-  // 同刻分组；组内同键位合并（保留最高音），再按和弦上限保留最高音
+  // 同格分组；组内按源时刻聚簇（≤CHORD_SOURCE_WINDOW 为真同击），
+  // 只保留最高音所在的簇（同格内先后奏响的连音按旋律优先取舍），
+  // 簇内同键位合并（保留最高音），再按和弦上限保留最高音
   const grouped: Event[] = []
   for (const note of mapped) {
     const current = grouped[grouped.length - 1]
@@ -132,8 +143,10 @@ export function convertChart(
     }
   }
   const capped: Event[] = grouped.map((group) => {
+    const anchor = [...group].sort((a, b) => b.pitch - a.pitch)[0]!
+    const cluster = group.filter((n) => Math.abs(n.srcTime - anchor.srcTime) <= CHORD_SOURCE_WINDOW)
     const byLane = new Map<number, MappedNote>()
-    for (const note of group) {
+    for (const note of cluster) {
       const existing = byLane.get(note.lane)
       if (existing === undefined || note.pitch > existing.pitch) {
         byLane.set(note.lane, note)
@@ -156,21 +169,22 @@ export function convertChart(
     }
   }
 
-  // 起奏预留：首音符早于预留时刻则整体平移（不改变相对时距）
+  // 起奏预留：首音符早于预留时刻则整体平移（不改变相对时距）；
+  // 此处一次性毫秒圆整（谱面时刻的输出精度，后续比较都在圆整值上）
   const firstTime = keptEvents[0]![0]!.time
   const shift = LEAD_IN_SECONDS - firstTime
   const events: Event[] =
     shift > 0
       ? keptEvents.map((event) => event.map((n) => ({ ...n, time: roundMs(n.time + shift) })))
-      : keptEvents
+      : keptEvents.map((event) => event.map((n) => ({ ...n, time: roundMs(n.time) })))
 
-  // 乐句切分（休止检测）+ 余韵窗口
-  const phrases = splitPhrases(events, beat)
+  // 乐句切分（休止检测 + 超长强制换气）+ 余韵窗口雕刻
+  const { phrases, kept } = splitPhrases(events, beat)
 
   // 契约装配（createChart 校验全部不变式）
   let chordSeq = 0
   const pairs: [number, number, number | undefined][] = []
-  for (const event of events) {
+  for (const event of kept) {
     const chordId = event.length >= 2 ? chordSeq++ : undefined
     for (const note of event) pairs.push([note.time, note.lane, chordId])
   }
@@ -199,26 +213,48 @@ export function convertSong(
 }
 
 /**
- * 休止检测切分乐句：休止 ≥ PHRASE_REST_BEATS 拍 且当前跨度 ≥ PHRASE_MIN_SPAN_BEATS 拍
- * → 句边界；跨度不足的换气并入后续乐句。每句末附余韵窗口
- * （句间休止 > 窗口时长，窗口内无音符由构造保证、createChart 兜底）。
+ * 乐句切分（休止检测为主 + 超长强制换气）与余韵窗口雕刻。
+ * - 自然换气：休止 ≥ PHRASE_REST_BEATS 拍且跨度 ≥ PHRASE_MIN_SPAN_BEATS 拍 → 边界
+ *   （跨度不足的换气并入后续乐句）。
+ * - 强制换气：跨度达 PHRASE_MAX_SPAN_BEATS 拍仍无自然换气口（连续织体）→ 在当前
+ *   位置切句，并雕刻窗口：丢弃 (句末, 句末+SUSTAIN_SECONDS] 内的音符，
+ *   为余韵演出让出静默（自然换气口已够宽，雕刻通常零丢弃）。
+ * 返回句序列与雕刻后保留的事件（调用方以保留事件装配契约）。
  */
-function splitPhrases(events: readonly Event[], beat: number): Phrase[] {
+function splitPhrases(
+  events: readonly Event[],
+  beat: number,
+): { phrases: Phrase[]; kept: Event[] } {
   const restSeconds = PHRASE_REST_BEATS * beat
   const minSpanSeconds = PHRASE_MIN_SPAN_BEATS * beat
+  const maxSpanSeconds = PHRASE_MAX_SPAN_BEATS * beat
   const phrases: Phrase[] = []
-  let start = events[0]![0]!.time
-  for (let i = 1; i < events.length; i += 1) {
+  const kept: Event[] = []
+  let startIdx = 0
+  for (let i = 1; i <= events.length; i += 1) {
+    const atEnd = i === events.length
     const end = events[i - 1]![0]!.time
-    const gap = events[i]![0]!.time - end
-    if (gap >= restSeconds - EPS && end - start >= minSpanSeconds - EPS) {
-      phrases.push(makePhrase(phrases.length, start, end))
-      start = events[i]![0]!.time
+    const span = end - events[startIdx]![0]!.time
+    const gap = atEnd ? Number.POSITIVE_INFINITY : events[i]![0]!.time - end
+    const naturalBreath = gap >= restSeconds - EPS && span >= minSpanSeconds - EPS
+    const forcedBreath = !atEnd && span >= maxSpanSeconds - EPS
+    if (!atEnd && !naturalBreath && !forcedBreath) continue
+
+    phrases.push(makePhrase(phrases.length, events[startIdx]![0]!.time, end))
+    for (let k = startIdx; k < i; k += 1) kept.push(events[k]!)
+    if (atEnd) break
+    // 雕刻余韵窗口：丢弃窗口内事件（强制换气处的小 gap 需要它让出演出静默）
+    let next = i
+    while (
+      next < events.length &&
+      events[next]![0]!.time <= end + SUSTAIN_SECONDS + EPS
+    ) {
+      next += 1
     }
+    startIdx = next
+    i = next - 1 // for 自增后恰好从 next 继续
   }
-  const lastEnd = events[events.length - 1]![0]!.time
-  phrases.push(makePhrase(phrases.length, start, lastEnd))
-  return phrases
+  return { phrases, kept }
 }
 
 function makePhrase(id: number, start: number, end: number): Phrase {

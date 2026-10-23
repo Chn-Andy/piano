@@ -32,7 +32,9 @@ npm run charts  # 从公版 MIDI fixture 重新生成三难度谱面 JSON（src/
 
 ## MIDI fixture 来源与授权
 
-`assets/fixtures/canon-in-d.mid`：
+`assets/fixtures/`（v1 三首，ADR-0008）：
 
-- 帕赫贝尔《D 大调卡农》（Pachelbel 1653–1706，作品公版），Mutopia Project 标注 **Public Domain**：<https://www.mutopiaproject.org/cgibin/make-table.cgi?setdir=PachelbelJ/CanonInD>
-- 转换谱面产物 `src/charts/canon/{easy,medium,hard}.json` 由 `npm run charts` 从该 fixture 确定性生成，测试锁定产物与新鲜转换一致。
+- `canon-in-d.mid` —— 帕赫贝尔《D 大调卡农》（Pachelbel 1653–1706，作品公版），Mutopia Project 标注 **Public Domain**：<https://www.mutopiaproject.org/cgibin/make-table.cgi?setdir=PachelbelJ/CanonInD>
+- `fur-elise.mid` —— 贝多芬《致爱丽丝》WoO 59（Beethoven 1770–1827，作品公版，双手钢琴编配），Mutopia Project 标注 **Public Domain**：<https://www.mutopiaproject.org/cgibin/make-table.cgi?setdir=BeethovenLv/WoO59/fur_Elise_WoO59>
+- `chun-jiang-hua-yue-ye.mid` —— 古曲《春江花月夜》（传统公版）；MIDI 为 Wang Jiayi 1997 年改编制谱（文件内文本事件 "Copyright _ 1997 by Wang Jiayi"），取自 figshare 数据集 [Music.Traditional.Chinese.MIDI](https://doi.org/10.6084/m9.figshare.5436022.v1)，整集授权 **CC BY 4.0**：<https://creativecommons.org/licenses/by/4.0/>（使用须署名该数据集）
+- 转换谱面产物 `src/charts/<曲目>/{easy,medium,hard}.json` 由 `npm run charts` 从上述 fixture 确定性生成，测试锁定产物与新鲜转换一致。

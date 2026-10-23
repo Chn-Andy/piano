@@ -29,26 +29,48 @@
         color: #2b2a26;
         font-family: 'Songti SC', 'Noto Serif SC', 'SimSun', serif;
         user-select: none;
-        cursor: pointer;
         transition: opacity 0.4s ease;
       }
       #overlay.hidden {
         opacity: 0;
         pointer-events: none;
       }
-      #overlay h1 {
+      .screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        max-height: 100vh;
+        padding: 24px 0;
+        box-sizing: border-box;
+      }
+      .screen h1 {
         margin: 0;
-        font-size: 64px;
+        font-size: 58px;
         font-weight: 600;
         letter-spacing: 0.35em;
         text-indent: 0.35em;
       }
-      #overlay p {
+      .screen h2 {
         margin: 0;
-        font-size: 17px;
-        color: #57544c;
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: 0.2em;
+        text-indent: 0.2em;
       }
-      #overlay kbd {
+      .screen p {
+        margin: 0;
+        font-size: 16px;
+        color: #57544c;
+        line-height: 1.7;
+        text-align: center;
+      }
+      .hint {
+        margin-top: 6px;
+        font-size: 14px;
+        color: #8a857a;
+      }
+      kbd {
         display: inline-block;
         min-width: 1.4em;
         padding: 2px 7px;
@@ -58,22 +80,160 @@
         border-radius: 6px;
         background: #faf7ef;
         font-family: inherit;
-        font-size: 16px;
+        font-size: 15px;
         text-align: center;
+      }
+      /* ── 曲库 ── */
+      .song-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: min(640px, 90vw);
+      }
+      .song-row {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 16px;
+        border: 1px solid #d8d2c2;
+        border-radius: 10px;
+        background: rgba(250, 247, 239, 0.7);
+      }
+      .song-name {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+      }
+      .song-blurb {
+        font-size: 13px;
+        color: #8a857a;
+        margin-top: 2px;
+      }
+      .diff-cells {
+        display: flex;
+        gap: 8px;
+      }
+      .diff-cell {
+        flex: 1;
+        padding: 8px 6px;
+        border: 1px solid #c9c2af;
+        border-radius: 8px;
+        background: #f6f2e8;
+        text-align: center;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .diff-cell.selected {
+        border-color: #2b2a26;
+        border-width: 2px;
+        background: #faf7ef;
+        box-shadow: 0 2px 8px rgba(43, 42, 38, 0.12);
+      }
+      .diff-name {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .diff-best {
+        margin-top: 3px;
+        font-size: 13px;
+        color: #57544c;
+        min-height: 1.2em;
+      }
+      .best-rank {
+        font-weight: 700;
+        margin-right: 5px;
+      }
+      .rank-S { color: #8a6d1f; }
+      .rank-A { color: #37322a; }
+      .rank-B { color: #57544c; }
+      .rank-C { color: #a03d2c; }
+      /* ── 键位图示（钢琴预览）── */
+      .piano-preview {
+        position: relative;
+        height: 74px;
+        margin-top: 8px;
+      }
+      .pk {
+        position: absolute;
+        top: 26px;
+        width: 46px;
+        height: 46px;
+        border: 1px solid #b7b1a1;
+        border-bottom-width: 4px;
+        border-radius: 6px;
+        background: #faf7ef;
+        font-size: 17px;
+        line-height: 46px;
+        text-align: center;
+        box-sizing: border-box;
+        color: #57544c;
+      }
+      .pk.black {
+        top: 0;
+        width: 30px;
+        height: 32px;
+        line-height: 32px;
+        font-size: 13px;
+        border-color: #55503f;
+        background: #37322a;
+        color: #ece7db;
+        z-index: 1;
+      }
+      .pk.lit {
+        background: #37322a;
+        color: #ece7db;
+        border-color: #37322a;
+      }
+      /* ── 按钮 ── */
+      .actions {
+        display: flex;
+        gap: 14px;
+        margin-top: 10px;
+      }
+      .actions button {
+        padding: 10px 26px;
+        border: 1px solid #55503f;
+        border-radius: 8px;
+        background: #37322a;
+        color: #ece7db;
+        font-family: inherit;
+        font-size: 17px;
+        letter-spacing: 0.15em;
+        cursor: pointer;
+      }
+      .actions button.secondary {
+        background: transparent;
+        color: #37322a;
+      }
+      .actions button:hover {
+        box-shadow: 0 2px 10px rgba(43, 42, 38, 0.25);
+      }
+      /* ── 结算 ── */
+      .rank-big {
+        font-size: 128px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .new-record {
+        padding: 3px 14px;
+        border: 1px solid #8a6d1f;
+        border-radius: 999px;
+        color: #8a6d1f;
+        font-size: 14px;
+        letter-spacing: 0.2em;
+      }
+      .stats-line {
+        font-size: 17px;
+      }
+      .stats-line b {
+        font-weight: 700;
       }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
-    <div id="overlay">
-      <h1>心琴</h1>
-      <p id="overlay-message">点击此处或按任意键 · 开始斗琴 —— 卡农（中等）</p>
-      <p>
-        白键 <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd>
-        · 黑键 <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> 嵌于白键之间
-      </p>
-      <p>命中化剑气斩墨妖 · 连击抬伤害 · 和弦齐按成重击 · Miss 挨反击掉血</p>
-    </div>
+    <div id="overlay"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

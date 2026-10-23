@@ -106,10 +106,10 @@ describe('量化网格', () => {
 })
 
 describe('密度过滤（难度间密度单调）', () => {
-  /** 40 颗八分音符（每 0.5s 一颗），20 秒 */
+  /** 30 颗八分音符（每 0.5s 一颗，15 拍——单句内，不触发超长强制换气） */
   function eighthRun(): SourceSong {
     const notes: [number, number][] = []
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 30; i += 1) {
       notes.push([i * 0.5, [74, 69, 66, 62][i % 4]!])
     }
     return dMajor(notes)
@@ -123,9 +123,9 @@ describe('密度过滤（难度间密度单调）', () => {
       hard: convertChart(source, 'hard', INFO),
     }
 
-    expect(charts.hard.notes).toHaveLength(40)
-    expect(charts.medium.notes).toHaveLength(20)
-    expect(charts.easy.notes.length).toBeLessThan(20)
+    expect(charts.hard.notes).toHaveLength(30)
+    expect(charts.medium.notes).toHaveLength(15)
+    expect(charts.easy.notes.length).toBeLessThan(15)
 
     const density = (c: typeof charts.easy): number =>
       c.notes.length / c.duration
@@ -254,129 +254,199 @@ describe('难度规则常量（集中定标，SPEC-0001）', () => {
 })
 
 /**
- * 卡农真实 fixture（工单四条验收的 Seam 2 断言）。
- * 全部性质在测试内独立计算（不复用转换器的任何检查逻辑）。
- * fixture：Mutopia Project 帕赫贝尔《卡农 D 大调》，Public Domain，60 BPM 单声部。
+ * 真实织体校准（工单 05）：致爱丽丝/春江花月夜是连续琶音织体（源最小间隔
+ * 0.024s、十六分音符 0.208s @72bpm），与卡农的稀疏单声部不同——两条规则在
+ * 真实钢琴数据上首次校准。
  */
-const CANON_MIDI = join(import.meta.dirname, '..', '..', 'assets', 'fixtures', 'canon-in-d.mid')
-const CANON_DIR = join(import.meta.dirname, '..', 'charts', 'canon')
-const CANON_INFO = { id: 'canon-in-d', title: '卡农' } as const
-const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
+describe('和弦识别按源同击簇（同格 ≠ 同击）', () => {
+  it('同格内源先后奏响（>50ms）不构成和弦：只保留最高音所在簇（旋律优先）', () => {
+    const chart = convertChart(dMajor([[0.25, 74], [0.45, 66]]), 'medium', INFO)
 
-function canonCharts(): Record<(typeof DIFFICULTIES)[number], Chart> {
-  return convertSong(parseMidi(readFileSync(CANON_MIDI)), CANON_INFO)
-}
-
-describe('卡农真实 fixture：三难度谱面结构性质（工单 02 验收）', () => {
-  it('键位范围正确：简单 7 白键 / 中等 12 键 / 高级扩域，音符全部在界内', () => {
-    const charts = canonCharts()
-
-    expect(charts.easy.meta!.keys).toEqual(WHITE_KEY_NOTES)
-    expect(
-      charts.easy.notes.every((n) => n.lane >= 0 && n.lane <= 6),
-      '简单难度只用白键键位',
-    ).toBe(true)
-
-    expect(charts.medium.meta!.keys).toHaveLength(12)
-    expect(charts.medium.meta!.keys.filter((k) => k.includes('#'))).toHaveLength(5)
-    expect(
-      charts.medium.notes.every((n) => n.lane >= 0 && n.lane < 12),
-      '中等难度键位在 12 键界内',
-    ).toBe(true)
-
-    expect(charts.hard.meta!.keys.length).toBeGreaterThan(12)
-    expect(
-      charts.hard.notes.every(
-        (n) => n.lane >= 0 && n.lane < charts.hard.meta!.keys.length,
-      ),
-      '高级难度键位在扩域界内',
-    ).toBe(true)
+    expect(chart.notes).toHaveLength(1)
+    expect(chart.notes[0]!.time).toBe(1) // 两音同格吸附 t=1
+    expect(chart.notes[0]!.lane).toBe(2) // D5 折叠 D4（最高音存活）
+    expect(chart.notes[0]!.chordId).toBeUndefined()
   })
 
-  it('余韵窗口内无音符（不变式，全部乐句独立扫描）', () => {
-    const charts = canonCharts()
+  it('先后顺序颠倒仍取最高音簇：低音先响、旋律后至，留旋律', () => {
+    const chart = convertChart(dMajor([[0.25, 66], [0.45, 74]]), 'medium', INFO)
 
-    for (const difficulty of DIFFICULTIES) {
-      const { notes, phrases } = charts[difficulty]
-      expect(phrases, `${difficulty} 应带乐句`).toBeDefined()
-      for (const phrase of phrases!) {
-        const inside = notes.filter(
-          (n) => n.time > phrase.sustainStart && n.time <= phrase.sustainEnd,
-        )
-        expect(
-          inside,
-          `${difficulty} 乐句 ${phrase.id} 余韵窗口 (${phrase.sustainStart}, ${phrase.sustainEnd}] 内有 ${inside.length} 颗音符`,
-        ).toHaveLength(0)
+    expect(chart.notes).toHaveLength(1)
+    expect(chart.notes[0]!.lane).toBe(2)
+    expect(chart.notes[0]!.chordId).toBeUndefined()
+  })
+
+  it('源同击（≤50ms）才构成和弦：同簇成员保留并共享分组', () => {
+    const chart = convertChart(dMajor([[0.5, 74], [0.51, 66]]), 'medium', INFO)
+
+    expect(chart.notes).toHaveLength(2)
+    expect(new Set(chart.notes.map((n) => n.chordId)).size).toBe(1)
+  })
+})
+
+describe('连续织体的强制乐句换气（超长句切分 + 余韵窗口雕刻）', () => {
+  /** 80 颗连续十六分音符（20 秒无休止），下四音循环——致爱丽丝式的连音织体 */
+  function continuousSixteenths(): SourceSong {
+    const notes: [number, number][] = []
+    for (let i = 0; i < 80; i += 1) notes.push([i * 0.25, [74, 69, 66, 62][i % 4]!])
+    return dMajor(notes)
+  }
+
+  it('无自然休止的音流在超过最大句长后强制切句；窗口内音符被雕刻出让演出', () => {
+    const chart = convertChart(continuousSixteenths(), 'hard', INFO)
+
+    expect(chart.phrases!.length, '连续织体不应坍缩成单一乐句').toBeGreaterThanOrEqual(2)
+    for (const phrase of chart.phrases!) {
+      const inside = chart.notes.filter(
+        (n) => n.time > phrase.sustainStart && n.time <= phrase.sustainEnd,
+      )
+      expect(inside, `乐句 ${phrase.id} 余韵窗口内应无音符`).toHaveLength(0)
+    }
+  })
+})
+
+/**
+ * 真实 fixture（工单 02/05 验收的 Seam 2 断言）。
+ * 全部性质在测试内独立计算（不复用转换器的任何检查逻辑）。
+ * fixture 来源：卡农 / 致爱丽丝——Mutopia Project（Public Domain）；
+ * 春江花月夜——figshare 数据集 Music.Traditional.Chinese.MIDI（CC BY 4.0）。
+ */
+const FIXTURES = join(import.meta.dirname, '..', '..', 'assets', 'fixtures')
+const CHARTS_ROOT = join(import.meta.dirname, '..', 'charts')
+const SONG_FIXTURES = [
+  { id: 'canon-in-d', title: '卡农', dir: 'canon', midi: 'canon-in-d.mid' },
+  { id: 'fur-elise', title: '致爱丽丝', dir: 'fur-elise', midi: 'fur-elise.mid' },
+  { id: 'chun-jiang-hua-yue-ye', title: '春江花月夜', dir: 'chun-jiang', midi: 'chun-jiang-hua-yue-ye.mid' },
+] as const
+const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
+
+function fixtureCharts(
+  song: (typeof SONG_FIXTURES)[number],
+): Record<(typeof DIFFICULTIES)[number], Chart> {
+  return convertSong(parseMidi(readFileSync(join(FIXTURES, song.midi))), {
+    id: song.id,
+    title: song.title,
+  })
+}
+
+describe('三首真实 fixture：三难度谱面结构性质（工单 02/05 验收）', () => {
+  it('键位范围正确：简单 7 白键 / 中等 12 键 / 高级扩域，音符全部在界内', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+
+      expect(charts.easy.meta!.keys).toEqual(WHITE_KEY_NOTES)
+      expect(
+        charts.easy.notes.every((n) => n.lane >= 0 && n.lane <= 6),
+        `${song.title} 简单难度只用白键键位`,
+      ).toBe(true)
+
+      expect(charts.medium.meta!.keys).toHaveLength(12)
+      expect(charts.medium.meta!.keys.filter((k) => k.includes('#'))).toHaveLength(5)
+      expect(
+        charts.medium.notes.every((n) => n.lane >= 0 && n.lane < 12),
+        `${song.title} 中等难度键位在 12 键界内`,
+      ).toBe(true)
+
+      expect(charts.hard.meta!.keys.length).toBeGreaterThan(12)
+      expect(
+        charts.hard.notes.every((n) => n.lane >= 0 && n.lane < charts.hard.meta!.keys.length),
+        `${song.title} 高级难度键位在扩域界内`,
+      ).toBe(true)
+    }
+  })
+
+  it('余韵窗口内无音符（不变式，全部曲目全部难度全部乐句独立扫描）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+
+      for (const difficulty of DIFFICULTIES) {
+        const { notes, phrases } = charts[difficulty]
+        expect(phrases, `${song.title} ${difficulty} 应带乐句`).toBeDefined()
+        for (const phrase of phrases!) {
+          const inside = notes.filter(
+            (n) => n.time > phrase.sustainStart && n.time <= phrase.sustainEnd,
+          )
+          expect(
+            inside,
+            `${song.title} ${difficulty} 乐句 ${phrase.id} 余韵窗口内有 ${inside.length} 颗音符`,
+          ).toHaveLength(0)
+        }
       }
     }
   })
 
-  it('难度间密度单调：简单 < 中等 < 高级', () => {
-    const charts = canonCharts()
-    const density = (c: Chart): number => c.notes.length / c.duration
+  it('难度间密度单调：简单 < 中等 < 高级（逐曲）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      const density = (c: Chart): number => c.notes.length / c.duration
 
-    expect(density(charts.easy)).toBeGreaterThan(0)
-    expect(density(charts.easy)).toBeLessThan(density(charts.medium))
-    expect(density(charts.medium)).toBeLessThan(density(charts.hard))
+      expect(density(charts.easy)).toBeGreaterThan(0)
+      expect(density(charts.easy)).toBeLessThan(density(charts.medium))
+      expect(density(charts.medium), `${song.title} 中等应比高级稀`).toBeLessThan(density(charts.hard))
+    }
   })
 
-  it('乐句边界存在且恰好划分音符；和弦分组合法（同组和弦同刻）', () => {
-    const charts = canonCharts()
+  it('乐句边界存在且恰好划分音符；和弦分组合法（逐曲逐难度）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
 
-    for (const difficulty of DIFFICULTIES) {
-      const { notes, phrases } = charts[difficulty]
-      expect(phrases!.length, `${difficulty} 乐句边界应存在`).toBeGreaterThanOrEqual(2)
+      for (const difficulty of DIFFICULTIES) {
+        const { notes, phrases } = charts[difficulty]
+        expect(phrases!.length, `${song.title} ${difficulty} 乐句边界应存在`).toBeGreaterThanOrEqual(2)
 
-      // 乐句依时递增、句间有休止、首末对齐音符
-      expect(phrases![0]!.start).toBe(notes[0]!.time)
-      expect(phrases![phrases!.length - 1]!.end).toBe(notes[notes.length - 1]!.time)
-      for (let i = 1; i < phrases!.length; i += 1) {
-        expect(phrases![i]!.start).toBeGreaterThan(phrases![i - 1]!.end)
-      }
-      // 每颗音符恰属一句（句内有音符、句间休止无音符）
-      let cursor = 0
-      for (const phrase of phrases!) {
-        const span = notes.filter((n) => n.time >= phrase.start && n.time <= phrase.end)
-        expect(span.length, `乐句 ${phrase.id} 句内应有音符`).toBeGreaterThan(0)
-        expect(span[0]!.time).toBe(phrase.start)
-        expect(span[span.length - 1]!.time).toBe(phrase.end)
-        cursor += span.length
-      }
-      expect(cursor, `${difficulty} 乐句应划分全部音符`).toBe(notes.length)
-
-      // 和弦分组合法：同 chordId 必同刻且 ≥2 键；同刻多音必为单一分组
-      const byChord = new Map<number, number[]>()
-      const simultaneousIds = new Map<number, Set<number | undefined>>()
-      for (const note of notes) {
-        if (note.chordId !== undefined) {
-          byChord.set(note.chordId, [...(byChord.get(note.chordId) ?? []), note.time])
+        // 乐句依时递增、句间有休止、首末对齐音符
+        expect(phrases![0]!.start).toBe(notes[0]!.time)
+        expect(phrases![phrases!.length - 1]!.end).toBe(notes[notes.length - 1]!.time)
+        for (let i = 1; i < phrases!.length; i += 1) {
+          expect(phrases![i]!.start).toBeGreaterThan(phrases![i - 1]!.end)
         }
-        const ids = simultaneousIds.get(note.time) ?? new Set<number | undefined>()
-        ids.add(note.chordId)
-        simultaneousIds.set(note.time, ids)
-      }
-      for (const [chordId, times] of byChord) {
-        expect(new Set(times).size, `和弦 ${chordId} 的音符必须同刻`).toBe(1)
-        expect(times.length, `和弦 ${chordId} 至少两键同按`).toBeGreaterThanOrEqual(2)
-      }
-      for (const [time, ids] of simultaneousIds) {
-        const members = notes.filter((n) => n.time === time)
-        if (members.length >= 2) {
-          expect(ids.size, `时刻 ${time} 的同刻音符应构成单一和弦分组`).toBe(1)
-          expect(ids.has(undefined), `时刻 ${time} 的同刻音符应带分组`).toBe(false)
+        // 每颗音符恰属一句（句内有音符、句间休止无音符）
+        let cursor = 0
+        for (const phrase of phrases!) {
+          const span = notes.filter((n) => n.time >= phrase.start && n.time <= phrase.end)
+          expect(span.length, `乐句 ${phrase.id} 句内应有音符`).toBeGreaterThan(0)
+          expect(span[0]!.time).toBe(phrase.start)
+          expect(span[span.length - 1]!.time).toBe(phrase.end)
+          cursor += span.length
+        }
+        expect(cursor, `${song.title} ${difficulty} 乐句应划分全部音符`).toBe(notes.length)
+
+        // 和弦分组合法：同 chordId 必同刻且 ≥2 键；同刻多音必为单一分组
+        const byChord = new Map<number, number[]>()
+        const simultaneousIds = new Map<number, Set<number | undefined>>()
+        for (const note of notes) {
+          if (note.chordId !== undefined) {
+            byChord.set(note.chordId, [...(byChord.get(note.chordId) ?? []), note.time])
+          }
+          const ids = simultaneousIds.get(note.time) ?? new Set<number | undefined>()
+          ids.add(note.chordId)
+          simultaneousIds.set(note.time, ids)
+        }
+        for (const [chordId, times] of byChord) {
+          expect(new Set(times).size, `和弦 ${chordId} 的音符必须同刻`).toBe(1)
+          expect(times.length, `和弦 ${chordId} 至少两键同按`).toBeGreaterThanOrEqual(2)
+        }
+        for (const [time, ids] of simultaneousIds) {
+          const members = notes.filter((n) => n.time === time)
+          if (members.length >= 2) {
+            expect(ids.size, `时刻 ${time} 的同刻音符应构成单一和弦分组`).toBe(1)
+            expect(ids.has(undefined), `时刻 ${time} 的同刻音符应带分组`).toBe(false)
+          }
         }
       }
     }
   })
 
   it('已入库谱面产物与新鲜转换一致（npm run charts 可确定性再生成）', () => {
-    const charts = canonCharts()
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
 
-    for (const difficulty of DIFFICULTIES) {
-      const artifact = JSON.parse(
-        readFileSync(join(CANON_DIR, `${difficulty}.json`), 'utf-8'),
-      ) as Chart
-      expect(artifact).toEqual(charts[difficulty])
+      for (const difficulty of DIFFICULTIES) {
+        const artifact = JSON.parse(
+          readFileSync(join(CHARTS_ROOT, song.dir, `${difficulty}.json`), 'utf-8'),
+        ) as Chart
+        expect(artifact, `${song.dir}/${difficulty}.json 应与新鲜转换一致`).toEqual(charts[difficulty])
+      }
     }
   })
 })

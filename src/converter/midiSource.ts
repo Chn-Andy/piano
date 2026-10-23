@@ -28,6 +28,33 @@ export interface SourceSong {
   readonly key: SourceKey | null
 }
 
+/** 音高级 → 升号拼写的音名（小调根音换算用） */
+const PC_TO_SHARP_NAME = [
+  'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
+] as const
+
+/** 音名 → 音高级（'D'→2、'F#'→6、'Bb'→10） */
+function nameToPc(name: string): number {
+  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[name[0]?.toUpperCase() ?? '']
+  if (base === undefined) return 0
+  let pc = base
+  for (const char of name.slice(1)) {
+    if (char === '#') pc += 1
+    else if (char === 'b') pc -= 1
+  }
+  return ((pc % 12) + 12) % 12
+}
+
+/**
+ * @tonejs/midi 的调号 `key` 字段报的是**关系大调字母**（源码
+ * keySignatureKeys[key+7]：0 号小调 → "C"）。SourceSong 契约要求调根音
+ * （小调的真正主音）：小调根音 = 报告字母 + 9 个半音（关系小调）。
+ */
+function tonicRoot(reported: string, scale: 'major' | 'minor'): string {
+  if (scale === 'major') return reported
+  return PC_TO_SHARP_NAME[(nameToPc(reported) + 9) % 12]!
+}
+
 /** 解析 MIDI 二进制为源曲（@tonejs/midi：60 = C4，time 单位秒）。 */
 export function parseMidi(data: ArrayBuffer | Uint8Array): SourceSong {
   const midi = new ToneMidi.Midi(data)
@@ -36,6 +63,7 @@ export function parseMidi(data: ArrayBuffer | Uint8Array): SourceSong {
     .sort((a, b) => a.time - b.time)
   const bpm = midi.header.tempos[0]?.bpm ?? 120
   const keySignature = midi.header.keySignatures[0]
+  const scale = keySignature === undefined || keySignature.scale === 'major' ? 'major' : 'minor'
   return {
     notes,
     bpm,
@@ -43,8 +71,8 @@ export function parseMidi(data: ArrayBuffer | Uint8Array): SourceSong {
       keySignature === undefined
         ? null
         : {
-            root: keySignature.key,
-            scale: keySignature.scale === 'minor' ? 'minor' : 'major',
+            root: tonicRoot(keySignature.key, scale),
+            scale,
           },
   }
 }

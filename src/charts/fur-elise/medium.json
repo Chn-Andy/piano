@@ -1,0 +1,1089 @@
+{
+  "notes": [
+    {
+      "id": 0,
+      "time": 1,
+      "lane": 4
+    },
+    {
+      "id": 1,
+      "time": 1.833,
+      "lane": 4
+    },
+    {
+      "id": 2,
+      "time": 2.667,
+      "lane": 0
+    },
+    {
+      "id": 3,
+      "time": 3.5,
+      "lane": 9
+    },
+    {
+      "id": 4,
+      "time": 4.333,
+      "lane": 8
+    },
+    {
+      "id": 5,
+      "time": 5.167,
+      "lane": 0,
+      "chordId": 0
+    },
+    {
+      "id": 6,
+      "time": 5.167,
+      "lane": 9,
+      "chordId": 0
+    },
+    {
+      "id": 7,
+      "time": 6,
+      "lane": 4
+    },
+    {
+      "id": 8,
+      "time": 6.833,
+      "lane": 4
+    },
+    {
+      "id": 9,
+      "time": 7.667,
+      "lane": 0
+    },
+    {
+      "id": 10,
+      "time": 8.5,
+      "lane": 4
+    },
+    {
+      "id": 11,
+      "time": 9.333,
+      "lane": 4
+    },
+    {
+      "id": 12,
+      "time": 10.167,
+      "lane": 11
+    },
+    {
+      "id": 13,
+      "time": 11,
+      "lane": 9
+    },
+    {
+      "id": 14,
+      "time": 11.833,
+      "lane": 0
+    },
+    {
+      "id": 15,
+      "time": 12.667,
+      "lane": 0
+    },
+    {
+      "id": 16,
+      "time": 13.5,
+      "lane": 4
+    },
+    {
+      "id": 17,
+      "time": 14.333,
+      "lane": 4
+    },
+    {
+      "id": 18,
+      "time": 15.167,
+      "lane": 9
+    },
+    {
+      "id": 19,
+      "time": 16,
+      "lane": 0
+    },
+    {
+      "id": 20,
+      "time": 16.833,
+      "lane": 4
+    },
+    {
+      "id": 21,
+      "time": 17.667,
+      "lane": 4
+    },
+    {
+      "id": 22,
+      "time": 18.5,
+      "lane": 4
+    },
+    {
+      "id": 23,
+      "time": 19.333,
+      "lane": 4
+    },
+    {
+      "id": 24,
+      "time": 20.167,
+      "lane": 4
+    },
+    {
+      "id": 25,
+      "time": 21,
+      "lane": 0
+    },
+    {
+      "id": 26,
+      "time": 21.833,
+      "lane": 4
+    },
+    {
+      "id": 27,
+      "time": 22.667,
+      "lane": 8
+    },
+    {
+      "id": 28,
+      "time": 23.5,
+      "lane": 0,
+      "chordId": 1
+    },
+    {
+      "id": 29,
+      "time": 23.5,
+      "lane": 9,
+      "chordId": 1
+    },
+    {
+      "id": 30,
+      "time": 24.333,
+      "lane": 4
+    },
+    {
+      "id": 31,
+      "time": 25.167,
+      "lane": 4
+    },
+    {
+      "id": 32,
+      "time": 26,
+      "lane": 0
+    },
+    {
+      "id": 33,
+      "time": 26.833,
+      "lane": 4
+    },
+    {
+      "id": 34,
+      "time": 27.667,
+      "lane": 8
+    },
+    {
+      "id": 35,
+      "time": 28.5,
+      "lane": 11
+    },
+    {
+      "id": 36,
+      "time": 29.333,
+      "lane": 0
+    },
+    {
+      "id": 37,
+      "time": 30.167,
+      "lane": 9
+    },
+    {
+      "id": 38,
+      "time": 31,
+      "lane": 0,
+      "chordId": 2
+    },
+    {
+      "id": 39,
+      "time": 31,
+      "lane": 7,
+      "chordId": 2
+    },
+    {
+      "id": 40,
+      "time": 31.833,
+      "lane": 0,
+      "chordId": 3
+    },
+    {
+      "id": 41,
+      "time": 31.833,
+      "lane": 5,
+      "chordId": 3
+    },
+    {
+      "id": 42,
+      "time": 32.667,
+      "lane": 2
+    },
+    {
+      "id": 43,
+      "time": 33.5,
+      "lane": 9
+    },
+    {
+      "id": 44,
+      "time": 34.333,
+      "lane": 4
+    },
+    {
+      "id": 45,
+      "time": 35.167,
+      "lane": 0,
+      "chordId": 4
+    },
+    {
+      "id": 46,
+      "time": 35.167,
+      "lane": 9,
+      "chordId": 4
+    },
+    {
+      "id": 47,
+      "time": 36,
+      "lane": 0,
+      "chordId": 5
+    },
+    {
+      "id": 48,
+      "time": 36,
+      "lane": 5,
+      "chordId": 5
+    },
+    {
+      "id": 49,
+      "time": 36.833,
+      "lane": 0,
+      "chordId": 6
+    },
+    {
+      "id": 50,
+      "time": 36.833,
+      "lane": 2,
+      "chordId": 6
+    },
+    {
+      "id": 51,
+      "time": 37.667,
+      "lane": 0
+    },
+    {
+      "id": 52,
+      "time": 38.5,
+      "lane": 0,
+      "chordId": 7
+    },
+    {
+      "id": 53,
+      "time": 38.5,
+      "lane": 7,
+      "chordId": 7
+    },
+    {
+      "id": 54,
+      "time": 39.333,
+      "lane": 2,
+      "chordId": 8
+    },
+    {
+      "id": 55,
+      "time": 39.333,
+      "lane": 7,
+      "chordId": 8
+    },
+    {
+      "id": 56,
+      "time": 40.167,
+      "lane": 7
+    },
+    {
+      "id": 57,
+      "time": 41,
+      "lane": 7
+    },
+    {
+      "id": 58,
+      "time": 41.833,
+      "lane": 7
+    },
+    {
+      "id": 59,
+      "time": 42.667,
+      "lane": 7
+    },
+    {
+      "id": 60,
+      "time": 43.5,
+      "lane": 7
+    },
+    {
+      "id": 61,
+      "time": 44.333,
+      "lane": 7
+    },
+    {
+      "id": 62,
+      "time": 45.167,
+      "lane": 4
+    },
+    {
+      "id": 63,
+      "time": 46,
+      "lane": 4
+    },
+    {
+      "id": 64,
+      "time": 46.833,
+      "lane": 4
+    },
+    {
+      "id": 65,
+      "time": 48.083,
+      "lane": 4
+    },
+    {
+      "id": 66,
+      "time": 48.917,
+      "lane": 4
+    },
+    {
+      "id": 67,
+      "time": 49.75,
+      "lane": 4
+    },
+    {
+      "id": 68,
+      "time": 50.583,
+      "lane": 2
+    },
+    {
+      "id": 69,
+      "time": 51.417,
+      "lane": 9
+    },
+    {
+      "id": 70,
+      "time": 52.25,
+      "lane": 4,
+      "chordId": 9
+    },
+    {
+      "id": 71,
+      "time": 52.25,
+      "lane": 11,
+      "chordId": 9
+    },
+    {
+      "id": 72,
+      "time": 53.083,
+      "lane": 8
+    },
+    {
+      "id": 73,
+      "time": 53.917,
+      "lane": 9
+    },
+    {
+      "id": 74,
+      "time": 54.75,
+      "lane": 4
+    },
+    {
+      "id": 75,
+      "time": 55.583,
+      "lane": 2
+    },
+    {
+      "id": 76,
+      "time": 56.417,
+      "lane": 9
+    },
+    {
+      "id": 77,
+      "time": 57.25,
+      "lane": 4,
+      "chordId": 10
+    },
+    {
+      "id": 78,
+      "time": 57.25,
+      "lane": 11,
+      "chordId": 10
+    },
+    {
+      "id": 79,
+      "time": 58.083,
+      "lane": 0
+    },
+    {
+      "id": 80,
+      "time": 58.917,
+      "lane": 9
+    },
+    {
+      "id": 81,
+      "time": 59.75,
+      "lane": 0,
+      "chordId": 11
+    },
+    {
+      "id": 82,
+      "time": 59.75,
+      "lane": 4,
+      "chordId": 11
+    },
+    {
+      "id": 83,
+      "time": 60.583,
+      "lane": 5
+    },
+    {
+      "id": 84,
+      "time": 61.417,
+      "lane": 11
+    },
+    {
+      "id": 85,
+      "time": 62.25,
+      "lane": 2
+    },
+    {
+      "id": 86,
+      "time": 63.083,
+      "lane": 2
+    },
+    {
+      "id": 87,
+      "time": 63.917,
+      "lane": 4
+    },
+    {
+      "id": 88,
+      "time": 64.75,
+      "lane": 4
+    },
+    {
+      "id": 89,
+      "time": 65.583,
+      "lane": 4
+    },
+    {
+      "id": 90,
+      "time": 66.417,
+      "lane": 4
+    },
+    {
+      "id": 91,
+      "time": 67.25,
+      "lane": 4
+    },
+    {
+      "id": 92,
+      "time": 68.083,
+      "lane": 2
+    },
+    {
+      "id": 93,
+      "time": 68.917,
+      "lane": 9
+    },
+    {
+      "id": 94,
+      "time": 69.75,
+      "lane": 4,
+      "chordId": 12
+    },
+    {
+      "id": 95,
+      "time": 69.75,
+      "lane": 11,
+      "chordId": 12
+    },
+    {
+      "id": 96,
+      "time": 70.583,
+      "lane": 8
+    },
+    {
+      "id": 97,
+      "time": 71.417,
+      "lane": 9
+    },
+    {
+      "id": 98,
+      "time": 72.25,
+      "lane": 4
+    },
+    {
+      "id": 99,
+      "time": 73.083,
+      "lane": 2
+    },
+    {
+      "id": 100,
+      "time": 73.917,
+      "lane": 9
+    },
+    {
+      "id": 101,
+      "time": 74.75,
+      "lane": 4,
+      "chordId": 13
+    },
+    {
+      "id": 102,
+      "time": 74.75,
+      "lane": 11,
+      "chordId": 13
+    },
+    {
+      "id": 103,
+      "time": 75.583,
+      "lane": 0
+    },
+    {
+      "id": 104,
+      "time": 76.417,
+      "lane": 9
+    },
+    {
+      "id": 105,
+      "time": 77.25,
+      "lane": 1,
+      "chordId": 14
+    },
+    {
+      "id": 106,
+      "time": 77.25,
+      "lane": 10,
+      "chordId": 14
+    },
+    {
+      "id": 107,
+      "time": 78.083,
+      "lane": 9
+    },
+    {
+      "id": 108,
+      "time": 78.917,
+      "lane": 9
+    },
+    {
+      "id": 109,
+      "time": 79.75,
+      "lane": 2,
+      "chordId": 15
+    },
+    {
+      "id": 110,
+      "time": 79.75,
+      "lane": 5,
+      "chordId": 15
+    },
+    {
+      "id": 111,
+      "time": 80.583,
+      "lane": 2,
+      "chordId": 16
+    },
+    {
+      "id": 112,
+      "time": 80.583,
+      "lane": 5,
+      "chordId": 16
+    },
+    {
+      "id": 113,
+      "time": 81.417,
+      "lane": 9
+    },
+    {
+      "id": 114,
+      "time": 82.25,
+      "lane": 2,
+      "chordId": 17
+    },
+    {
+      "id": 115,
+      "time": 82.25,
+      "lane": 5,
+      "chordId": 17
+    },
+    {
+      "id": 116,
+      "time": 83.083,
+      "lane": 0,
+      "chordId": 18
+    },
+    {
+      "id": 117,
+      "time": 83.083,
+      "lane": 4,
+      "chordId": 18
+    },
+    {
+      "id": 118,
+      "time": 83.917,
+      "lane": 3,
+      "chordId": 19
+    },
+    {
+      "id": 119,
+      "time": 83.917,
+      "lane": 9,
+      "chordId": 19
+    },
+    {
+      "id": 120,
+      "time": 84.75,
+      "lane": 0,
+      "chordId": 20
+    },
+    {
+      "id": 121,
+      "time": 84.75,
+      "lane": 9,
+      "chordId": 20
+    },
+    {
+      "id": 122,
+      "time": 85.583,
+      "lane": 2,
+      "chordId": 21
+    },
+    {
+      "id": 123,
+      "time": 85.583,
+      "lane": 11,
+      "chordId": 21
+    },
+    {
+      "id": 124,
+      "time": 86.417,
+      "lane": 9
+    },
+    {
+      "id": 125,
+      "time": 87.25,
+      "lane": 1,
+      "chordId": 22
+    },
+    {
+      "id": 126,
+      "time": 87.25,
+      "lane": 10,
+      "chordId": 22
+    },
+    {
+      "id": 127,
+      "time": 88.083,
+      "lane": 9
+    },
+    {
+      "id": 128,
+      "time": 88.917,
+      "lane": 9
+    },
+    {
+      "id": 129,
+      "time": 89.75,
+      "lane": 2,
+      "chordId": 23
+    },
+    {
+      "id": 130,
+      "time": 89.75,
+      "lane": 5,
+      "chordId": 23
+    },
+    {
+      "id": 131,
+      "time": 90.583,
+      "lane": 2,
+      "chordId": 24
+    },
+    {
+      "id": 132,
+      "time": 90.583,
+      "lane": 5,
+      "chordId": 24
+    },
+    {
+      "id": 133,
+      "time": 91.417,
+      "lane": 10
+    },
+    {
+      "id": 134,
+      "time": 92.25,
+      "lane": 3,
+      "chordId": 25
+    },
+    {
+      "id": 135,
+      "time": 92.25,
+      "lane": 7,
+      "chordId": 25
+    },
+    {
+      "id": 136,
+      "time": 93.083,
+      "lane": 2,
+      "chordId": 26
+    },
+    {
+      "id": 137,
+      "time": 93.083,
+      "lane": 5,
+      "chordId": 26
+    },
+    {
+      "id": 138,
+      "time": 93.917,
+      "lane": 10
+    },
+    {
+      "id": 139,
+      "time": 94.75,
+      "lane": 5,
+      "chordId": 27
+    },
+    {
+      "id": 140,
+      "time": 94.75,
+      "lane": 8,
+      "chordId": 27
+    },
+    {
+      "id": 141,
+      "time": 95.583,
+      "lane": 5,
+      "chordId": 28
+    },
+    {
+      "id": 142,
+      "time": 95.583,
+      "lane": 8,
+      "chordId": 28
+    },
+    {
+      "id": 143,
+      "time": 97.25,
+      "lane": 4,
+      "chordId": 29
+    },
+    {
+      "id": 144,
+      "time": 97.25,
+      "lane": 11,
+      "chordId": 29
+    },
+    {
+      "id": 145,
+      "time": 98.5,
+      "lane": 0
+    },
+    {
+      "id": 146,
+      "time": 99.333,
+      "lane": 4
+    },
+    {
+      "id": 147,
+      "time": 100.167,
+      "lane": 0
+    },
+    {
+      "id": 148,
+      "time": 101,
+      "lane": 0
+    },
+    {
+      "id": 149,
+      "time": 101.833,
+      "lane": 4
+    },
+    {
+      "id": 150,
+      "time": 102.667,
+      "lane": 8
+    },
+    {
+      "id": 151,
+      "time": 103.5,
+      "lane": 2
+    },
+    {
+      "id": 152,
+      "time": 104.333,
+      "lane": 8
+    },
+    {
+      "id": 153,
+      "time": 105.167,
+      "lane": 4
+    },
+    {
+      "id": 154,
+      "time": 106,
+      "lane": 0
+    },
+    {
+      "id": 155,
+      "time": 106.833,
+      "lane": 4
+    },
+    {
+      "id": 156,
+      "time": 107.667,
+      "lane": 8
+    },
+    {
+      "id": 157,
+      "time": 108.5,
+      "lane": 0,
+      "chordId": 30
+    },
+    {
+      "id": 158,
+      "time": 108.5,
+      "lane": 9,
+      "chordId": 30
+    },
+    {
+      "id": 159,
+      "time": 109.333,
+      "lane": 4
+    },
+    {
+      "id": 160,
+      "time": 110.167,
+      "lane": 4
+    },
+    {
+      "id": 161,
+      "time": 111,
+      "lane": 0
+    },
+    {
+      "id": 162,
+      "time": 111.833,
+      "lane": 4
+    },
+    {
+      "id": 163,
+      "time": 112.667,
+      "lane": 8
+    },
+    {
+      "id": 164,
+      "time": 113.5,
+      "lane": 11
+    },
+    {
+      "id": 165,
+      "time": 114.333,
+      "lane": 0
+    },
+    {
+      "id": 166,
+      "time": 115.167,
+      "lane": 0
+    },
+    {
+      "id": 167,
+      "time": 116,
+      "lane": 4
+    },
+    {
+      "id": 168,
+      "time": 116.833,
+      "lane": 4
+    },
+    {
+      "id": 169,
+      "time": 117.667,
+      "lane": 9
+    },
+    {
+      "id": 170,
+      "time": 118.5,
+      "lane": 0
+    },
+    {
+      "id": 171,
+      "time": 119.333,
+      "lane": 4
+    },
+    {
+      "id": 172,
+      "time": 120.167,
+      "lane": 4
+    },
+    {
+      "id": 173,
+      "time": 121,
+      "lane": 4
+    },
+    {
+      "id": 174,
+      "time": 121.833,
+      "lane": 4
+    },
+    {
+      "id": 175,
+      "time": 122.667,
+      "lane": 4
+    },
+    {
+      "id": 176,
+      "time": 123.5,
+      "lane": 0
+    },
+    {
+      "id": 177,
+      "time": 124.333,
+      "lane": 4
+    },
+    {
+      "id": 178,
+      "time": 125.167,
+      "lane": 8
+    },
+    {
+      "id": 179,
+      "time": 126,
+      "lane": 0,
+      "chordId": 31
+    },
+    {
+      "id": 180,
+      "time": 126,
+      "lane": 9,
+      "chordId": 31
+    },
+    {
+      "id": 181,
+      "time": 126.833,
+      "lane": 4
+    },
+    {
+      "id": 182,
+      "time": 127.667,
+      "lane": 4
+    },
+    {
+      "id": 183,
+      "time": 128.5,
+      "lane": 0
+    },
+    {
+      "id": 184,
+      "time": 129.333,
+      "lane": 4
+    },
+    {
+      "id": 185,
+      "time": 130.167,
+      "lane": 8
+    },
+    {
+      "id": 186,
+      "time": 131,
+      "lane": 11
+    }
+  ],
+  "duration": 133,
+  "meta": {
+    "song": "fur-elise",
+    "title": "致爱丽丝",
+    "difficulty": "medium",
+    "keys": [
+      "C4",
+      "C#4",
+      "D4",
+      "D#4",
+      "E4",
+      "F4",
+      "F#4",
+      "G4",
+      "G#4",
+      "A4",
+      "A#4",
+      "B4"
+    ],
+    "quantizeGrid": 0.417
+  },
+  "phrases": [
+    {
+      "id": 0,
+      "start": 1,
+      "end": 15.167,
+      "sustainStart": 15.167,
+      "sustainEnd": 15.767
+    },
+    {
+      "id": 1,
+      "start": 16,
+      "end": 30.167,
+      "sustainStart": 30.167,
+      "sustainEnd": 30.767
+    },
+    {
+      "id": 2,
+      "start": 31,
+      "end": 45.167,
+      "sustainStart": 45.167,
+      "sustainEnd": 45.767
+    },
+    {
+      "id": 3,
+      "start": 46,
+      "end": 59.75,
+      "sustainStart": 59.75,
+      "sustainEnd": 60.35
+    },
+    {
+      "id": 4,
+      "start": 60.583,
+      "end": 73.917,
+      "sustainStart": 73.917,
+      "sustainEnd": 74.517
+    },
+    {
+      "id": 5,
+      "start": 74.75,
+      "end": 88.917,
+      "sustainStart": 88.917,
+      "sustainEnd": 89.517
+    },
+    {
+      "id": 6,
+      "start": 89.75,
+      "end": 103.5,
+      "sustainStart": 103.5,
+      "sustainEnd": 104.1
+    },
+    {
+      "id": 7,
+      "start": 104.333,
+      "end": 117.667,
+      "sustainStart": 117.667,
+      "sustainEnd": 118.267
+    },
+    {
+      "id": 8,
+      "start": 118.5,
+      "end": 131,
+      "sustainStart": 131,
+      "sustainEnd": 131.6
+    }
+  ]
+}
