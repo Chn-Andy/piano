@@ -88,3 +88,26 @@ export const COUNTER_DAMAGE = 6
  */
 export const CHORD_TOGETHER_WINDOW = 0.08
 export const CHORD_MULTIPLIER = 2.0
+
+/* ── 余韵与终章（工单 04，ADR-0007）──────────────────────────────────
+ * 乐句末自动触发余韵：规模 = 该乐句表现分（句内连击 + 判定质量）分档。
+ * 表现分取 0..1，两个维度的加权和：
+ * - 判定质量 quality = (Perfect×1 + Good×GOOD_CREDIT) / 句内音符数；
+ * - 句内连击 fullness = 句内最长不断连击 / 句内音符数。
+ * 分档两刀三档（TIER_EDGES 升序，边界含）：
+ * - 0.70：普通玩家（三失其一、Good 居多）常落 minor，认真玩家稳过 major；
+ * - 0.90：grand 是「仰望时刻」，留给近乎无瑕的乐句——
+ *   认真玩家（95% 命中 + Perfect 抖动）多数乐句 quality≈0.97、fullness≈0.95，
+ *   表现分 ≈ 0.96 稳进 grand；普通玩家 quality≈0.55、fullness≈0.5，
+ *   ≈ 0.53 落 minor。终章（末乐句）在此基础上另作加强演出，不占档位。
+ */
+export const SUSTAIN = {
+  /** Good 对判定质量的折算（Perfect 全额，Miss 无贡献） */
+  GOOD_CREDIT: 0.6,
+  /** 判定质量权重 */
+  QUALITY_WEIGHT: 0.7,
+  /** 句内连击权重 */
+  COMBO_WEIGHT: 0.3,
+  /** 分档边界（表现分 ≥ 边界升档；minor < 边界1 ≤ major < 边界2 ≤ grand） */
+  TIER_EDGES: [0.7, 0.9] as const,
+} as const

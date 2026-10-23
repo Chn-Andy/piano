@@ -18,6 +18,7 @@ import { comboMultiplierFor } from './core/combat'
 import { layoutForKeys } from './core/keymap'
 import { Simulator } from './core/simulator'
 import type { BattleEvent, GameEvent } from './core/simulator'
+import type { SustainEvent } from './core/sustain'
 import { Renderer } from './render/renderer'
 import type { HitFeedback, JudgmentFlash } from './render/renderer'
 
@@ -28,12 +29,28 @@ const BEAT_SECONDS = 0.5
 const PLAY_EPSILON = 0.003
 /** 判定闪示与战斗反馈在列表中的最长保留（供淡出后清理） */
 const FLASH_KEEP = 1.5
+/** 余韵事件在渲染列表中的最长保留（窗口 + 残响尾巴 + 余量） */
+const SUSTAIN_KEEP = 1.6
+/** 终章演出后结算画面的最短宽限：先看完收势再见胜负 */
+const FINALE_GRACE = 0.9
 
 const params = new URLSearchParams(window.location.search)
 const AUTO = params.get('auto')
 const CHART_NAME = params.get('chart') === 'easy' || params.get('chart') === 'hard'
   ? params.get('chart')
   : 'medium'
+
+/**
+ * 开发验证钩子（与 ?auto 同例）：暴露只读对局时钟与局面，供浏览器自动化
+ * 按游戏自身的音频主时钟对准演出时刻（墙钟会因音频挂起而漂移）。
+ */
+const debugView: { phase: Phase; t: number; combo: number; sustains: number } = {
+  phase: 'idle',
+  t: 0,
+  combo: 0,
+  sustains: 0,
+}
+;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!
 const overlay = document.querySelector<HTMLElement>('#overlay')!
@@ -60,6 +77,13 @@ const flashes: JudgmentFlash[] = []
 const hits: HitFeedback[] = []
 const slains: { at: number; monsterId: number }[] = []
 const counters: { at: number }[] = []
+/** 近期余韵/终章事件（演出与音效据此驱动；渲染层纯函数式消费） */
+const sustains: SustainEvent[] = []
+let outcomeShown = false
+/** 终局后画面时钟的冻结值（终章宽限期内画面仍随音频时钟走完演出） */
+let endedFreezeT: number | null = null
+/** 结算画面允许出现的最早音频时钟时刻（终章宽限） */
+let overlayDueAt = 0
 
 function setOverlay(title: string, lines: readonly string[]): void {
   const h1 = overlay.querySelector('h1')
@@ -90,13 +114,22 @@ function beginRound(): void {
   hits.length = 0
   slains.length = 0
   counters.length = 0
+  sustains.length = 0
   held.clear()
   outcomeResult = null
+  outcomeShown = false
+  endedFreezeT = null
+  overlayDueAt = 0
   roundStartAt = engine.now() + COUNT_BEATS * BEAT_SECONDS + 0.15
   phase = 'countdown'
   for (let i = 0; i < COUNT_BEATS; i += 1) {
     const when = roundStartAt - (COUNT_BEATS - i) * BEAT_SECONDS
     engine.scheduleAhead(when, (w) => engine.countdownTick(w, i === COUNT_BEATS - 1))
+  }
+  // 墨主登场钟鼓：出场时刻已知（出场计划），lookahead 准点发声
+  for (const monster of sim.monstersView()) {
+    if (monster.kind !== 'inkLord') continue
+    engine.scheduleAhead(roundStartAt + monster.spawnAt, (w) => engine.lordEntrance(w))
   }
   if (AUTO === 'perfect') scheduleAutoplay()
 }
@@ -132,17 +165,28 @@ function collectBattle(events: readonly BattleEvent[]): void {
     } else if (e.type === 'counter') {
       counters.push({ at: e.time })
       engine.counterHit(engine.now() + PLAY_EPSILON)
+    } else if (e.type === 'sustain') {
+      sustains.push(e)
+      engine.sustainBurst(
+        engine.now() + PLAY_EPSILON,
+        e.tier === 'grand' ? 2 : e.tier === 'major' ? 1 : 0,
+        e.finale,
+      )
     } else if (e.type === 'outcome') {
       outcomeResult = e.result
       endedAt = engine.now()
       phase = 'ended'
-      showOutcome()
+      // 终章宽限：收势没演完不掀结算幕布（无终章则立即）
+      const finale = sustains[sustains.length - 1]
+      const finaleEnd = finale !== undefined && finale.finale ? roundStartAt + finale.windowEnd : 0
+      overlayDueAt = Math.max(endedAt, finaleEnd + FINALE_GRACE)
     }
   }
 }
 
 /** 结算画面（最简：文字 + 统计；评级是 05 号票） */
 function showOutcome(): void {
+  outcomeShown = true
   const s = sim.summary()
   const won = outcomeResult === 'victory'
   setOverlay(won ? '斗琴告捷' : '斗琴落败', [
@@ -212,6 +256,9 @@ function prune(t: number): void {
   for (let i = counters.length - 1; i >= 0; i -= 1) {
     if (t - counters[i]!.at > FLASH_KEEP) counters.splice(i, 1)
   }
+  for (let i = sustains.length - 1; i >= 0; i -= 1) {
+    if (t - sustains[i]!.windowEnd > SUSTAIN_KEEP) sustains.splice(i, 1)
+  }
 }
 
 function frame(): void {
@@ -234,20 +281,31 @@ function frame(): void {
       hits,
       slains,
       counters,
+      sustains,
     })
     return
   }
 
   const now = engine.now()
   if (phase === 'countdown' && now >= roundStartAt) phase = 'playing'
-  // 终局后画面定格在 outcome 时刻
-  const t = phase === 'ended' ? endedAt - roundStartAt : now - roundStartAt
+
+  // 终局宽限：终章收势没演完不掀结算幕布；画面时钟走完演出再冻结
+  if (phase === 'ended' && !outcomeShown && now >= overlayDueAt) {
+    if (endedFreezeT === null) endedFreezeT = now - roundStartAt
+    showOutcome()
+  }
+  const t = phase === 'ended' ? (endedFreezeT ?? now - roundStartAt) : now - roundStartAt
 
   if (phase !== 'ended') {
     collect(sim.tick(t))
     collectBattle(sim.drainBattle())
   }
   prune(t)
+
+  debugView.phase = phase
+  debugView.t = t
+  debugView.combo = sim.combo
+  debugView.sustains = sustains.length
 
   renderer.draw({
     chart,
@@ -265,6 +323,7 @@ function frame(): void {
     hits,
     slains,
     counters,
+    sustains,
   })
 }
 
