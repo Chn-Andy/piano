@@ -9,13 +9,14 @@
  * 本仓库内文件为 v8 力度层的 mp3 转制，取自 @tonejs/piano 作者（Yotam Mann）
  * 托管：https://tambien.github.io/Piano/audio/（仓库 github.com/tambien/Piano）
  * ──────────────────────────────────────────────────────────────────────
- * 原生采样只在小三度音高上（C4/Ds4/Fs4/A4/C5…）；本作所需的其余白键
- * （D4/E4/F4/G4/B4）取最近原生采样、以 playbackRate 重采样发声——这与
- * @tonejs/piano 官方库的做法一致（它同样只携带小三度文件）。
+ * 原生采样只在小三度音高上（C4/Ds4/Fs4/A4/C5…）；音域内的其余音名
+ * 取最近原生采样、以 playbackRate 重采样发声——这与 @tonejs/piano
+ * 官方库的做法一致（它同样只携带小三度文件）。音域内（C4..C5）最大
+ * 偏移 ±1 半音；工单 03 起谱面音域扩至 G3..D5，出界音名同样取最近
+ * 采样重采样（至多 ±5 半音，速率 0.75–1.12，听感差异留给 06 号票打磨）。
  */
 
-import type { Lane } from '../core/chart'
-import { WHITE_KEY_NOTES } from '../core/keymap'
+const PITCH_CLASS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
 
 interface NativeSample {
   readonly file: string
@@ -30,8 +31,6 @@ const NATIVE_SAMPLES: readonly NativeSample[] = [
   { file: 'A4v8.mp3', semitones: 9 },
   { file: 'C5v8.mp3', semitones: 12 },
 ]
-
-const PITCH_CLASS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
 
 /** 音名（'C4'、'F#4' 或文件名风格 'Fs4'）→ 相对 C4 的半音数。 */
 export function semitonesFromC4(note: string): number {
@@ -65,12 +64,11 @@ export class Piano {
   }
 
   /**
-   * 弹奏一个键位。when 为音频时钟上的发声时刻（ADR-0010）；
+   * 弹奏一个音名（如 'F#4'）——音频随谱面键位布局走（工单 03 起
+   * 不再限于白键八度）。when 为音频时钟上的发声时刻（ADR-0010）；
    * 调用方通常传 now + 微小 ε，把声音放到音频时间线的未来，避免爆音。
    */
-  play(lane: Lane, when: number): void {
-    const note = WHITE_KEY_NOTES[lane]
-    if (note === undefined) return
+  play(note: string, when: number): void {
     const semitones = semitonesFromC4(note)
 
     let native = NATIVE_SAMPLES[0]!

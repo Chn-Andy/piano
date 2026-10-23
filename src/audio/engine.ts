@@ -80,6 +80,43 @@ export class AudioEngine {
     osc.stop(when + 0.1)
   }
 
+  /** 墨妖反击（Miss）：低频闷响，短促下沉——"挨了一下"。 */
+  counterHit(when: number): void {
+    const ctx = this.context
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(150, when)
+    osc.frequency.exponentialRampToValueAtTime(52, when + 0.16)
+    gain.gain.setValueAtTime(0.3, when)
+    gain.gain.exponentialRampToValueAtTime(0.001, when + 0.18)
+    osc.connect(gain).connect(this.destination)
+    osc.start(when)
+    osc.stop(when + 0.2)
+  }
+
+  /** 墨妖被击杀：墨点泼溅（带通白噪脉冲，Program synthesis，无素材）。 */
+  monsterSlain(when: number): void {
+    const ctx = this.context
+    const seconds = 0.22
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2
+    }
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.setValueAtTime(900, when)
+    filter.frequency.exponentialRampToValueAtTime(220, when + seconds)
+    filter.Q.value = 0.8
+    const gain = ctx.createGain()
+    gain.gain.value = 0.5
+    source.connect(filter).connect(gain).connect(this.destination)
+    source.start(when)
+  }
+
   private pumpOnce(): void {
     if (this.ctx === null) return
     const horizon = this.ctx.currentTime + LOOKAHEAD_SECONDS
