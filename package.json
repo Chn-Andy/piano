@@ -7,10 +7,13 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "charts": "tsx scripts/generate-charts.ts",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@tonejs/midi": "^2.0.28",
     "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.0",
     "vite": "^7.0.0",
     "vitest": "^3.0.0"
