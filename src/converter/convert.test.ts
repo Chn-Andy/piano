@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Chart } from '../core/chart'
-import { WHITE_KEY_NOTES } from '../core/keymap'
+import { WHITE_KEY_NOTES, layoutForKeys } from '../core/keymap'
 import type { SourceSong } from './midiSource'
 import { parseMidi } from './midiSource'
 import { convertChart, convertSong } from './convert'
@@ -311,7 +311,7 @@ describe('连续织体的强制乐句换气（超长句切分 + 余韵窗口雕�
  * fixture 来源：卡农 / 致爱丽丝——Mutopia Project（Public Domain）；
  * 春江花月夜——figshare 数据集 Music.Traditional.Chinese.MIDI（CC BY 4.0）。
  */
-const FIXTURES = join(import.meta.dirname, '..', '..', 'assets', 'fixtures')
+const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures')
 const CHARTS_ROOT = join(import.meta.dirname, '..', 'charts')
 const SONG_FIXTURES = [
   { id: 'canon-in-d', title: '卡农', dir: 'canon', midi: 'canon-in-d.mid' },
@@ -446,6 +446,26 @@ describe('三首真实 fixture：三难度谱面结构性质（工单 02/05 验�
           readFileSync(join(CHARTS_ROOT, song.dir, `${difficulty}.json`), 'utf-8'),
         ) as Chart
         expect(artifact, `${song.dir}/${difficulty}.json 应与新鲜转换一致`).toEqual(charts[difficulty])
+      }
+    }
+  })
+
+  /**
+   * 工单 07（上线）审计钉子：入库谱面的键域必须全部落在键位定标表内
+   * （G3..D#5）——这是采样可覆盖范围（5 个原生采样经最近重采样覆盖
+   * G3..D5，src/audio/piano.ts）。越界音名会在开局时让 layoutForKeys
+   * 抛错（游戏崩溃）；此测试把"运行时崩溃"提前为"测试期红"。
+   */
+  it('入库谱面键域全部在键位定标表内（采样可覆盖，工单 07）', () => {
+    for (const song of SONG_FIXTURES) {
+      for (const difficulty of DIFFICULTIES) {
+        const artifact = JSON.parse(
+          readFileSync(join(CHARTS_ROOT, song.dir, `${difficulty}.json`), 'utf-8'),
+        ) as Chart
+        expect(
+          () => layoutForKeys(artifact.meta!.keys),
+          `${song.dir}/${difficulty}.json 键域应可定标`,
+        ).not.toThrow()
       }
     }
   })

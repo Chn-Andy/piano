@@ -44,23 +44,38 @@ export function semitonesFromC4(note: string): number {
 
 export class Piano {
   private readonly buffers = new Map<string, AudioBuffer>()
+  /** 在途/已成的加载承诺（幂等加载，工单 07） */
+  private loadPromise: Promise<void> | null = null
 
   constructor(
     private readonly ctx: () => AudioContext,
     private readonly destination: () => AudioNode,
   ) {}
 
-  /** 预取并解码全部原生采样（5 个文件，约 0.9MB）。 */
-  async load(): Promise<void> {
-    const ctx = this.ctx()
-    await Promise.all(
-      NATIVE_SAMPLES.map(async ({ file }) => {
-        const res = await fetch(`${import.meta.env.BASE_URL}samples/${file}`)
-        if (!res.ok) throw new Error(`采样加载失败 ${file}：HTTP ${res.status}`)
-        const bytes = await res.arrayBuffer()
-        this.buffers.set(file, await ctx.decodeAudioData(bytes))
-      }),
-    )
+  /**
+   * 预取并解码全部原生采样（5 个文件，约 0.9MB）。幂等（工单 07 审计）：
+   * 首次用户手势后加载一次，此后每次开局直接复用已解码缓冲——不再
+   * 逐局重复拉取与解码；失败不缓存（置回 null），同一会话内可重试。
+   * 全部 5 个采样对任一谱面都可能被用到（键域 G3..D5 经最近采样重采样
+   * 覆盖，见文件头），故"开局必需"即全部——无需按谱面挑选。
+   */
+  load(): Promise<void> {
+    if (this.loadPromise === null) {
+      this.loadPromise = Promise.all(
+        NATIVE_SAMPLES.map(async ({ file }) => {
+          const res = await fetch(`${import.meta.env.BASE_URL}samples/${file}`)
+          if (!res.ok) throw new Error(`采样加载失败 ${file}：HTTP ${res.status}`)
+          const bytes = await res.arrayBuffer()
+          this.buffers.set(file, await this.ctx().decodeAudioData(bytes))
+        }),
+      )
+        .then(() => undefined)
+        .catch((err: unknown) => {
+          this.loadPromise = null
+          throw err
+        })
+    }
+    return this.loadPromise
   }
 
   /**
