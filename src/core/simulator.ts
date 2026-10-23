@@ -194,6 +194,11 @@ export class Simulator {
     return this.hp
   }
 
+  /** 玩家 HP 上限（渲染血条用） */
+  get playerMaxHp(): number {
+    return PLAYER_MAX_HP
+  }
+
   /** 斗琴局面：进行中 / 胜 / 败 */
   get status(): BattleStatus {
     return this.battleStatus
