@@ -262,7 +262,8 @@ function showTutorial(): void {
   )
 }
 
-function tutorialKeyPressed(physical: string): void {
+function tutorialKeyPressed(rawKey: string): void {
+  const physical = rawKey.toUpperCase() // 物理键名统一大写（真实键盘 keydown 多为小写）
   const lane = laneForKey(physical)
   if (lane === null) return
   const note = WHITE_KEY_NOTES[lane]
