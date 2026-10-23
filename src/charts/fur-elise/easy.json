@@ -1,0 +1,515 @@
+{
+  "notes": [
+    {
+      "id": 0,
+      "time": 1,
+      "lane": 2
+    },
+    {
+      "id": 1,
+      "time": 2.667,
+      "lane": 1
+    },
+    {
+      "id": 2,
+      "time": 4.333,
+      "lane": 6
+    },
+    {
+      "id": 3,
+      "time": 6,
+      "lane": 2
+    },
+    {
+      "id": 4,
+      "time": 7.667,
+      "lane": 1
+    },
+    {
+      "id": 5,
+      "time": 9.333,
+      "lane": 6
+    },
+    {
+      "id": 6,
+      "time": 11,
+      "lane": 5
+    },
+    {
+      "id": 7,
+      "time": 12.667,
+      "lane": 2
+    },
+    {
+      "id": 8,
+      "time": 14.333,
+      "lane": 2
+    },
+    {
+      "id": 9,
+      "time": 16,
+      "lane": 1
+    },
+    {
+      "id": 10,
+      "time": 17.667,
+      "lane": 2
+    },
+    {
+      "id": 11,
+      "time": 19.333,
+      "lane": 2
+    },
+    {
+      "id": 12,
+      "time": 21,
+      "lane": 1
+    },
+    {
+      "id": 13,
+      "time": 22.667,
+      "lane": 6
+    },
+    {
+      "id": 14,
+      "time": 24.333,
+      "lane": 2
+    },
+    {
+      "id": 15,
+      "time": 26,
+      "lane": 1
+    },
+    {
+      "id": 16,
+      "time": 27.667,
+      "lane": 2
+    },
+    {
+      "id": 17,
+      "time": 29.333,
+      "lane": 1
+    },
+    {
+      "id": 18,
+      "time": 31,
+      "lane": 0
+    },
+    {
+      "id": 19,
+      "time": 32.667,
+      "lane": 2
+    },
+    {
+      "id": 20,
+      "time": 34.333,
+      "lane": 3
+    },
+    {
+      "id": 21,
+      "time": 36,
+      "lane": 0
+    },
+    {
+      "id": 22,
+      "time": 37.667,
+      "lane": 2
+    },
+    {
+      "id": 23,
+      "time": 39.333,
+      "lane": 1
+    },
+    {
+      "id": 24,
+      "time": 41,
+      "lane": 0
+    },
+    {
+      "id": 25,
+      "time": 42.667,
+      "lane": 4
+    },
+    {
+      "id": 26,
+      "time": 44.333,
+      "lane": 5
+    },
+    {
+      "id": 27,
+      "time": 46,
+      "lane": 2
+    },
+    {
+      "id": 28,
+      "time": 47.667,
+      "lane": 2
+    },
+    {
+      "id": 29,
+      "time": 49.333,
+      "lane": 2
+    },
+    {
+      "id": 30,
+      "time": 51,
+      "lane": 1
+    },
+    {
+      "id": 31,
+      "time": 52.667,
+      "lane": 6
+    },
+    {
+      "id": 32,
+      "time": 54.333,
+      "lane": 2
+    },
+    {
+      "id": 33,
+      "time": 56,
+      "lane": 1
+    },
+    {
+      "id": 34,
+      "time": 57.667,
+      "lane": 6
+    },
+    {
+      "id": 35,
+      "time": 59.333,
+      "lane": 1
+    },
+    {
+      "id": 36,
+      "time": 61,
+      "lane": 3
+    },
+    {
+      "id": 37,
+      "time": 62.667,
+      "lane": 0
+    },
+    {
+      "id": 38,
+      "time": 64.333,
+      "lane": 2
+    },
+    {
+      "id": 39,
+      "time": 66,
+      "lane": 2
+    },
+    {
+      "id": 40,
+      "time": 67.667,
+      "lane": 2
+    },
+    {
+      "id": 41,
+      "time": 69.333,
+      "lane": 5
+    },
+    {
+      "id": 42,
+      "time": 71,
+      "lane": 0
+    },
+    {
+      "id": 43,
+      "time": 72.667,
+      "lane": 2
+    },
+    {
+      "id": 44,
+      "time": 74.333,
+      "lane": 5
+    },
+    {
+      "id": 45,
+      "time": 76,
+      "lane": 0
+    },
+    {
+      "id": 46,
+      "time": 77.667,
+      "lane": 1
+    },
+    {
+      "id": 47,
+      "time": 79.333,
+      "lane": 3
+    },
+    {
+      "id": 48,
+      "time": 81,
+      "lane": 3
+    },
+    {
+      "id": 49,
+      "time": 82.667,
+      "lane": 1
+    },
+    {
+      "id": 50,
+      "time": 84.333,
+      "lane": 5
+    },
+    {
+      "id": 51,
+      "time": 86,
+      "lane": 6
+    },
+    {
+      "id": 52,
+      "time": 87.667,
+      "lane": 1
+    },
+    {
+      "id": 53,
+      "time": 89.333,
+      "lane": 3
+    },
+    {
+      "id": 54,
+      "time": 91,
+      "lane": 3
+    },
+    {
+      "id": 55,
+      "time": 92.667,
+      "lane": 6
+    },
+    {
+      "id": 56,
+      "time": 94.333,
+      "lane": 5
+    },
+    {
+      "id": 57,
+      "time": 96,
+      "lane": 5
+    },
+    {
+      "id": 58,
+      "time": 97.667,
+      "lane": 6
+    },
+    {
+      "id": 59,
+      "time": 99.333,
+      "lane": 2
+    },
+    {
+      "id": 60,
+      "time": 101,
+      "lane": 5
+    },
+    {
+      "id": 61,
+      "time": 102.667,
+      "lane": 6
+    },
+    {
+      "id": 62,
+      "time": 104.333,
+      "lane": 6
+    },
+    {
+      "id": 63,
+      "time": 106,
+      "lane": 1
+    },
+    {
+      "id": 64,
+      "time": 107.667,
+      "lane": 6
+    },
+    {
+      "id": 65,
+      "time": 109.333,
+      "lane": 2
+    },
+    {
+      "id": 66,
+      "time": 111,
+      "lane": 1
+    },
+    {
+      "id": 67,
+      "time": 112.667,
+      "lane": 6
+    },
+    {
+      "id": 68,
+      "time": 114.333,
+      "lane": 1
+    },
+    {
+      "id": 69,
+      "time": 116,
+      "lane": 3
+    },
+    {
+      "id": 70,
+      "time": 117.667,
+      "lane": 0
+    },
+    {
+      "id": 71,
+      "time": 119.333,
+      "lane": 2
+    },
+    {
+      "id": 72,
+      "time": 121,
+      "lane": 2
+    },
+    {
+      "id": 73,
+      "time": 122.667,
+      "lane": 2
+    },
+    {
+      "id": 74,
+      "time": 124.333,
+      "lane": 5
+    },
+    {
+      "id": 75,
+      "time": 126,
+      "lane": 0
+    },
+    {
+      "id": 76,
+      "time": 127.667,
+      "lane": 2
+    },
+    {
+      "id": 77,
+      "time": 129.333,
+      "lane": 5
+    },
+    {
+      "id": 78,
+      "time": 131,
+      "lane": 0
+    }
+  ],
+  "duration": 133,
+  "meta": {
+    "song": "fur-elise",
+    "title": "致爱丽丝",
+    "difficulty": "easy",
+    "keys": [
+      "C4",
+      "D4",
+      "E4",
+      "F4",
+      "G4",
+      "A4",
+      "B4"
+    ],
+    "quantizeGrid": 0.833
+  },
+  "phrases": [
+    {
+      "id": 0,
+      "start": 1,
+      "end": 9.333,
+      "sustainStart": 9.333,
+      "sustainEnd": 9.933
+    },
+    {
+      "id": 1,
+      "start": 11,
+      "end": 19.333,
+      "sustainStart": 19.333,
+      "sustainEnd": 19.933
+    },
+    {
+      "id": 2,
+      "start": 21,
+      "end": 29.333,
+      "sustainStart": 29.333,
+      "sustainEnd": 29.933
+    },
+    {
+      "id": 3,
+      "start": 31,
+      "end": 39.333,
+      "sustainStart": 39.333,
+      "sustainEnd": 39.933
+    },
+    {
+      "id": 4,
+      "start": 41,
+      "end": 49.333,
+      "sustainStart": 49.333,
+      "sustainEnd": 49.933
+    },
+    {
+      "id": 5,
+      "start": 51,
+      "end": 59.333,
+      "sustainStart": 59.333,
+      "sustainEnd": 59.933
+    },
+    {
+      "id": 6,
+      "start": 61,
+      "end": 69.333,
+      "sustainStart": 69.333,
+      "sustainEnd": 69.933
+    },
+    {
+      "id": 7,
+      "start": 71,
+      "end": 79.333,
+      "sustainStart": 79.333,
+      "sustainEnd": 79.933
+    },
+    {
+      "id": 8,
+      "start": 81,
+      "end": 89.333,
+      "sustainStart": 89.333,
+      "sustainEnd": 89.933
+    },
+    {
+      "id": 9,
+      "start": 91,
+      "end": 99.333,
+      "sustainStart": 99.333,
+      "sustainEnd": 99.933
+    },
+    {
+      "id": 10,
+      "start": 101,
+      "end": 109.333,
+      "sustainStart": 109.333,
+      "sustainEnd": 109.933
+    },
+    {
+      "id": 11,
+      "start": 111,
+      "end": 119.333,
+      "sustainStart": 119.333,
+      "sustainEnd": 119.933
+    },
+    {
+      "id": 12,
+      "start": 121,
+      "end": 129.333,
+      "sustainStart": 129.333,
+      "sustainEnd": 129.933
+    },
+    {
+      "id": 13,
+      "start": 131,
+      "end": 131,
+      "sustainStart": 131,
+      "sustainEnd": 131.6
+    }
+  ]
+}
