@@ -1,5 +1,7 @@
 # GitHub Pages 部署（工单 07，ADR-0009 双发之一）
 # push 到 main → 测试 + 构建 → 部署 Pages（官方 actions 的标准流）。
+# 触发分支是 main 而非集成分支 xinqin-v1：发布由用户把 xinqin-v1 推上
+# main 完成（07 号票已记录此发布动作，workflow 触发条件不改）。
 # 启用方式（网页操作，无需 gh CLI）见 README「发布步骤」：
 # 仓库 Settings → Pages → Build and deployment → Source 选 "GitHub Actions"。
 name: Deploy to GitHub Pages
