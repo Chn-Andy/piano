@@ -13,9 +13,11 @@
  * 其余状态经 monstersView() / playerHp / summary() 查询。
  */
 
-import type { Chart, ChartNote, Lane } from './chart'
+import type { Chart, ChartNote, Lane, Phrase } from './chart'
 import { comboMultiplierFor, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
+import { phrasePerformanceScore, sustainTierFor } from './sustain'
+import type { PhrasePerformance, SustainEvent } from './sustain'
 import {
   BASE_DAMAGE,
   CHORD_MULTIPLIER,
@@ -95,10 +97,30 @@ export interface OutcomeEvent {
   readonly reason: 'cleared' | 'player-hp-empty' | 'monsters-remain'
 }
 
-export type BattleEvent = StrikeEvent | SlainEvent | CounterEvent | ChordEvent | OutcomeEvent
+export type BattleEvent =
+  | StrikeEvent
+  | SlainEvent
+  | CounterEvent
+  | ChordEvent
+  | SustainEvent
+  | OutcomeEvent
 
 /** 斗琴局面：进行中 / 胜 / 败（终局后模拟器定格） */
 export type BattleStatus = 'fighting' | 'victory' | 'defeat'
+
+/** 乐句恰好划分音符（chart.ts 校验），故各句音符是连续下标区间 */
+function phraseNoteRanges(chart: Chart): PhraseNoteRange[] {
+  const ranges: PhraseNoteRange[] = []
+  let cursor = 0
+  for (const phrase of chart.phrases ?? []) {
+    while (cursor < chart.notes.length && chart.notes[cursor]!.time < phrase.start) cursor += 1
+    let last = cursor
+    while (last + 1 < chart.notes.length && chart.notes[last + 1]!.time <= phrase.end) last += 1
+    ranges.push({ first: cursor, last })
+    cursor = last + 1
+  }
+  return ranges
+}
 
 /** 结算统计（胜负画面用；评级映射是后续工单） */
 export interface BattleSummary {
@@ -145,9 +167,22 @@ interface ChordTracking {
   broken: boolean
 }
 
+/** 乐句的音符下标区间 [first, last]（闭区间；乐句恰好划分音符，见 chart.ts） */
+interface PhraseNoteRange {
+  readonly first: number
+  readonly last: number
+}
+
 export class Simulator {
   private readonly notes: readonly ChartNote[]
   private readonly duration: number
+  /** 乐句边界（谱面省略时无余韵结构）与各句音符下标区间 */
+  private readonly phrases: readonly Phrase[] | undefined
+  private readonly phraseRanges: readonly PhraseNoteRange[] | undefined
+  /** 余韵触发游标：下一只待触发的乐句下标 */
+  private sustainCursor = 0
+  /** 每颗音符的最终判定（余韵表现分的原始台账；未判定为 undefined） */
+  private readonly noteTiers: (JudgmentTier | undefined)[]
   /** 已判定/已 Miss 的音符 id 集合 */
   private readonly resolved = new Set<number>()
   /** Miss 扫描游标：此前的音符必已出结果（命中或 Miss） */
@@ -171,6 +206,9 @@ export class Simulator {
   constructor(chart: Chart, options?: SimulatorOptions) {
     this.notes = chart.notes
     this.duration = chart.duration
+    this.phrases = chart.phrases
+    this.phraseRanges = chart.phrases === undefined ? undefined : phraseNoteRanges(chart)
+    this.noteTiers = new Array<JudgmentTier | undefined>(chart.notes.length).fill(undefined)
     const plan = options?.monsters ?? planMonsters(chart)
     this.monsters = plan.map((p) => ({ plan: p, hp: p.hp }))
     for (const note of this.notes) {
@@ -264,6 +302,7 @@ export class Simulator {
       Math.abs(offset) <= JUDGMENT_WINDOWS.perfect ? 'Perfect' : 'Good'
     if (judgment === 'Perfect') this.perfectCount += 1
     else this.goodCount += 1
+    this.noteTiers[note.id] = judgment
     this.strike(note, judgment, time)
     const event: JudgmentEvent = {
       type: 'judgment',
@@ -300,6 +339,7 @@ export class Simulator {
       this.resolved.add(note.id)
       this.comboCount = 0
       this.missCount += 1
+      this.noteTiers[note.id] = 'Miss'
       if (note.chordId !== undefined) {
         // 和弦缺员：重击资格作废（半按语义——按下的成员已各自结伤害）
         const tracking = this.chords.get(note.chordId)
@@ -317,6 +357,7 @@ export class Simulator {
       this.missScan += 1
       if (this.battleStatus !== 'fighting') return events // 血空即定格
     }
+    this.triggerSustains(time)
     if (time >= this.duration && this.battleStatus === 'fighting') {
       // 歌毕：场上怪清完 → 胜；仍有活怪 → 败（此后再无音符可清场）
       const cleared = this.monsters.every((m) => m.hp <= 0)
@@ -347,6 +388,60 @@ export class Simulator {
       if (monster.plan.spawnAt <= time && monster.hp > 0) return monster
     }
     return null
+  }
+
+  /**
+   * 余韵触发（ADR-0007：自动、零输入）：句末音符的判定收束
+   * （句末时刻 + Good 窗）之后，句内全部音符必已出判定，即可安全结算
+   * 该句表现分并产出事件。事件时刻是确定性的触发点本身，与 tick 粒度无关。
+   */
+  private triggerSustains(time: number): void {
+    if (this.phrases === undefined || this.phraseRanges === undefined) return
+    while (this.sustainCursor < this.phrases.length) {
+      const index = this.sustainCursor
+      const phrase = this.phrases[index]!
+      if (!(time > phrase.end + JUDGMENT_WINDOWS.good)) break
+      this.sustainCursor += 1
+      const range = this.phraseRanges[index]!
+      const perf = this.phrasePerformance(range)
+      const score = phrasePerformanceScore(perf)
+      const finale = index === this.phrases.length - 1
+      const lord = finale ? this.monsters.find((m) => m.plan.kind === 'inkLord') : undefined
+      this.battle.push({
+        type: 'sustain',
+        time: phrase.end + JUDGMENT_WINDOWS.good,
+        phraseId: phrase.id,
+        tier: sustainTierFor(score),
+        score,
+        notes: range.last - range.first + 1,
+        windowStart: phrase.sustainStart,
+        windowEnd: phrase.sustainEnd,
+        finale,
+        lordId: lord === undefined ? null : lord.plan.id,
+      })
+    }
+  }
+
+  /** 句内判定台账 → 表现分原料（计数 + 最长连击；触发时句内必已全部判定） */
+  private phrasePerformance(range: PhraseNoteRange): PhrasePerformance {
+    let perfect = 0
+    let good = 0
+    let miss = 0
+    let run = 0
+    let longestRun = 0
+    for (let i = range.first; i <= range.last; i += 1) {
+      const tier = this.noteTiers[i]
+      if (tier === 'Miss') {
+        miss += 1
+        run = 0
+        continue
+      }
+      if (tier === 'Perfect') perfect += 1
+      else if (tier === 'Good') good += 1
+      run += 1
+      if (run > longestRun) longestRun = run
+    }
+    return { perfect, good, miss, longestRun }
   }
 
   /** Miss 结算：墨妖反击，玩家掉血；血空即败局 */
