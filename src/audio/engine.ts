@@ -66,6 +66,39 @@ export class AudioEngine {
     this.queue.sort((a, b) => a.at - b.at)
   }
 
+  /**
+   * 暂停（工单 05）：挂起音频上下文——主时钟（currentTime）随之冻结，
+   * 对局时间轴原地停住；同时停掉 lookahead 泵（挂起期间到期的任务
+   * 不应被派发）。恢复后一切调度按原时刻继续，无漂移。
+   */
+  pause(): void {
+    if (this.ctx === null) return
+    if (this.pumpTimer !== null) {
+      clearInterval(this.pumpTimer)
+      this.pumpTimer = null
+    }
+    if (this.ctx.state === 'running') void this.ctx.suspend()
+  }
+
+  /** 继续对局：恢复上下文与时钟，重启 lookahead 泵。 */
+  resume(): void {
+    if (this.ctx === null) return
+    if (this.ctx.state === 'suspended') void this.ctx.resume()
+    if (this.pumpTimer === null) {
+      this.pumpTimer = setInterval(() => this.pumpOnce(), PUMP_INTERVAL_MS)
+    }
+  }
+
+  /** 引擎是否处于挂起态（主时钟冻结中） */
+  get suspended(): boolean {
+    return this.ctx?.state === 'suspended'
+  }
+
+  /** 丢弃全部未到期的已注册任务（放弃对局时清场，防僵尸回调） */
+  cancelScheduled(): void {
+    this.queue.length = 0
+  }
+
   /** 倒计时木鱼声（程序合成；末拍重音）。 */
   countdownTick(when: number, accent: boolean): void {
     const ctx = this.context
