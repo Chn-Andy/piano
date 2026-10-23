@@ -1,6 +1,6 @@
 /**
- * 本机最佳纪录（SPEC-0001 持久化：localStorage——各歌各难度最佳评级与最大
- * 连击）。纯层：存储以 KeyValueStore 接口注入（浏览器壳传 localStorage），
+ * 本机最佳纪录（SPEC-0001 持久化：浏览器本地持久化——各歌各难度最佳评级与最大
+ * 连击）。纯层：存储以 KeyValueStore 接口注入（浏览器壳传本地存储），
  * 无 DOM 依赖。比较语义：评级优先（S > A > B > C），同级比最大连击；
  * 失败不更新最佳（工单 05）——斗琴以胜负论，败局成绩不入册。
  */
@@ -20,13 +20,13 @@ export type SongRecords = Partial<Record<DifficultyName, BestRecord>>
 /** 全部纪录：曲目 id → 难度 → 最佳 */
 export type Records = Readonly<Record<string, SongRecords>>
 
-/** 键值存储抽象（浏览器壳传 localStorage；读取不可用返回 null） */
+/** 键值存储抽象（浏览器壳传本地存储；读取不可用返回 null） */
 export interface KeyValueStore {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
 }
 
-/** localStorage 键（版本化：结构不兼容时升版本号，旧键任其沉没） */
+/** 存储键（版本化：结构不兼容时升版本号，旧键任其沉没） */
 export const RECORDS_KEY = 'xinqin.records.v1'
 
 /** 评级序：S > A > B > C */
