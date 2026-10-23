@@ -12,7 +12,8 @@ import type { Lane } from './chart'
 /** 白键物理键（自左至右），对应一个八度 C4..B4 */
 export const WHITE_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J'] as const
 
-/** 白键对应的钢琴音名（供音频层选择采样） */
+/** 白键对应的钢琴音名（供音频层选择采样；与 converter/rules.ts 的
+ *  EASY_KEYS 相同——简单难度键区恰为白键八度，两处独立声明、互为印证） */
 export const WHITE_KEY_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'] as const
 
 /** 黑键物理键（嵌于白键之间，位置同真钢琴；后续工单启用） */

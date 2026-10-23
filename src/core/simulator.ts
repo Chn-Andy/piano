@@ -41,7 +41,7 @@ export interface JudgmentEvent {
   readonly time: number
   /** 按键时刻相对音符命中时刻的偏移（秒，正=迟）；Miss 无按键，不携带 */
   readonly offset?: number
-  /** 事件之后的连击数 */
+  /** 事件之后的连击 */
   readonly combo: number
 }
 
@@ -222,7 +222,7 @@ export class Simulator {
     }
   }
 
-  /** 当前连击数（GLOSSARY：连击） */
+  /** 当前连击（GLOSSARY：连击） */
   get combo(): number {
     return this.comboCount
   }
@@ -475,19 +475,22 @@ export class Simulator {
       damage,
       comboMultiplier: multiplier,
     })
-    if (target !== null) {
-      target.hp = Math.max(0, target.hp - damage)
-      this.damageDealt += damage
-      if (target.hp === 0) {
-        this.battle.push({
-          type: 'slain',
-          time,
-          monsterId: target.plan.id,
-          kind: target.plan.kind,
-        })
-      }
-    }
+    if (target !== null) this.dealDamage(target, damage, time)
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
+  }
+
+  /** 伤害入账：扣血、累计总伤害，血归零即击杀入流（剑气与和弦重击共用） */
+  private dealDamage(target: MonsterState, damage: number, time: number): void {
+    target.hp = Math.max(0, target.hp - damage)
+    this.damageDealt += damage
+    if (target.hp === 0) {
+      this.battle.push({
+        type: 'slain',
+        time,
+        monsterId: target.plan.id,
+        kind: target.plan.kind,
+      })
+    }
   }
 
   /** 和弦成员命中记账；全员命中即判齐按：齐 → 重击加成，散 → 无赏 */
@@ -512,17 +515,6 @@ export class Simulator {
       bonusDamage: bonus,
       size: tracking.memberIds.size,
     })
-    if (target !== null) {
-      target.hp = Math.max(0, target.hp - bonus)
-      this.damageDealt += bonus
-      if (target.hp === 0) {
-        this.battle.push({
-          type: 'slain',
-          time,
-          monsterId: target.plan.id,
-          kind: target.plan.kind,
-        })
-      }
-    }
+    if (target !== null) this.dealDamage(target, bonus, time)
   }
 }

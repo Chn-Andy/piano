@@ -160,11 +160,7 @@ export class AudioEngine {
   monsterSlain(when: number): void {
     const ctx = this.context
     const seconds = 0.22
-    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < data.length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2
-    }
+    const buffer = this.noiseBuffer(seconds, 2)
     const source = ctx.createBufferSource()
     source.buffer = buffer
     const filter = ctx.createBiquadFilter()
@@ -189,11 +185,7 @@ export class AudioEngine {
 
     // 泼洒主体：白噪带通自上而下扫频，越大的档越宽越沉
     const seconds = 0.4 + tier * 0.22
-    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < data.length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 1.6
-    }
+    const buffer = this.noiseBuffer(seconds, 1.6)
     const source = ctx.createBufferSource()
     source.buffer = buffer
     const filter = ctx.createBiquadFilter()
@@ -275,11 +267,7 @@ export class AudioEngine {
 
     // 刀锋：高通白噪急收（剑气掠过）
     const seconds = 0.09
-    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < data.length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3
-    }
+    const buffer = this.noiseBuffer(seconds, 3)
     const source = ctx.createBufferSource()
     source.buffer = buffer
     const edge = ctx.createBiquadFilter()
@@ -349,12 +337,7 @@ export class AudioEngine {
     drum.stop(when + 0.45)
 
     // 木质"扣"：印面压纸的一击
-    const seconds = 0.05
-    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < data.length; i += 1) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2
-    }
+    const buffer = this.noiseBuffer(0.05, 2)
     const source = ctx.createBufferSource()
     source.buffer = buffer
     const filter = ctx.createBiquadFilter()
@@ -374,6 +357,21 @@ export class AudioEngine {
       const { at, task } = this.queue.shift()!
       task(at)
     }
+  }
+
+  /**
+   * 衰减白噪 buffer（程序合成，无素材）：击杀泼溅、余韵收势、剑气刀锋、
+   * 落印扣声共用——seconds 为时长，decay 为线性包络的衰减指数
+   * （越大收得越急）。
+   */
+  private noiseBuffer(seconds: number, decay: number): AudioBuffer {
+    const ctx = this.context
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** decay
+    }
+    return buffer
   }
 
   dispose(): void {

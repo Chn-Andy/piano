@@ -65,9 +65,9 @@ describe('余韵规模分档（表现分 → 档位，边界含）', () => {
     const order = { minor: 0, major: 1, grand: 2 } as const
     let previous = -1
     for (let i = 0; i <= 20; i += 1) {
-      const rank = order[sustainTierFor(i / 20)]
-      expect(rank).toBeGreaterThanOrEqual(previous)
-      previous = rank
+      const tier = order[sustainTierFor(i / 20)]
+      expect(tier).toBeGreaterThanOrEqual(previous)
+      previous = tier
     }
   })
 })

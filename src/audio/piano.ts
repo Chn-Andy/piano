@@ -16,7 +16,7 @@
  * 采样重采样（至多 ±5 半音，速率 0.75–1.12，听感差异留给 06 号票打磨）。
  */
 
-const PITCH_CLASS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
+import { pitchClassOf } from '../core/pitch'
 
 interface NativeSample {
   readonly file: string
@@ -39,7 +39,7 @@ export function semitonesFromC4(note: string): number {
   const letter = m[1] as string
   const accidental = m[2] ?? ''
   const octave = m[3] as string
-  return (Number(octave) - 4) * 12 + PITCH_CLASS[letter]! + (accidental === '' ? 0 : 1)
+  return (Number(octave) - 4) * 12 + pitchClassOf(letter) + (accidental === '' ? 0 : 1)
 }
 
 export class Piano {

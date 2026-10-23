@@ -6,6 +6,7 @@
 
 // 该包为 UMD/CJS 构建，node ESM 下命名导入不可用，默认导入取其 exports 对象。
 import ToneMidi from '@tonejs/midi'
+import { pitchClassOf } from '../core/pitch'
 
 /** 源曲音符：时刻（秒）+ MIDI 音高 */
 export interface SourceNote {
@@ -33,18 +34,6 @@ const PC_TO_SHARP_NAME = [
   'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
 ] as const
 
-/** 音名 → 音高级（'D'→2、'F#'→6、'Bb'→10） */
-function nameToPc(name: string): number {
-  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[name[0]?.toUpperCase() ?? '']
-  if (base === undefined) return 0
-  let pc = base
-  for (const char of name.slice(1)) {
-    if (char === '#') pc += 1
-    else if (char === 'b') pc -= 1
-  }
-  return ((pc % 12) + 12) % 12
-}
-
 /**
  * @tonejs/midi 的调号 `key` 字段报的是**关系大调字母**（源码
  * keySignatureKeys[key+7]：0 号小调 → "C"）。SourceSong 契约要求调根音
@@ -52,7 +41,7 @@ function nameToPc(name: string): number {
  */
 function tonicRoot(reported: string, scale: 'major' | 'minor'): string {
   if (scale === 'major') return reported
-  return PC_TO_SHARP_NAME[(nameToPc(reported) + 9) % 12]!
+  return PC_TO_SHARP_NAME[(pitchClassOf(reported) + 9) % 12]!
 }
 
 /** 解析 MIDI 二进制为源曲（@tonejs/midi：60 = C4，time 单位秒）。 */
