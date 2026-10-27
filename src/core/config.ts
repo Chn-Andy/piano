@@ -66,9 +66,9 @@ export const COMBO_MULTIPLIER_STOPS = [
  */
 export const HORDE_PLAN = {
   /** 各难度波宽（秒）：生成节奏随难度——波越窄，增援越密 */
-  WAVE_SECONDS: { easy: 32, medium: 30, hard: 26 },
+  WAVE_SECONDS: { easy: 32, medium: 30, hard: 26 } satisfies Record<DifficultyName, number>,
   /** 每波墨妖只数：难度越高群越大（末波墨主独行，不占此数） */
-  GROUP_SIZE: { easy: 2, medium: 3, hard: 4 },
+  GROUP_SIZE: { easy: 2, medium: 3, hard: 4 } satisfies Record<DifficultyName, number>,
   /** 同波妖的出场错峰（秒）：拉开纵深层级、错开咬线节奏 */
   GROUP_STAGGER_SECONDS: 5,
   /** 每只墨妖 HP = 波内音符数 × 期望伤害 × 此比例（群只数不改单只厚度） */

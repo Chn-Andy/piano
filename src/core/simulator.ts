@@ -8,8 +8,8 @@
  * 输入：谱面 + 以音频时钟计时的按键事件序列。
  * 输出两条可观察事件流：
  * - 判定流（keyDown / tick 返回）：Perfect / Good / Miss 与连击状态；
- * - 战斗流（drainBattle 取走）：剑气伤害、墨妖反击与击杀、胜负面
- *   （战斗数值不是分数换皮，全部收进本层，ADR-0004）。
+ * - 战斗流（drainBattle 取走）：剑气 AoE、扑空、咬线、击杀与胜负面
+ *   （战斗数值不是分数换皮，全部收进本层，ADR-0004/0011/0012）。
  * 其余状态经 monstersView() / playerHp / summary() 查询。
  */
 
@@ -22,7 +22,6 @@ import {
   BASE_DAMAGE,
   CHORD_MULTIPLIER,
   CHORD_TOGETHER_WINDOW,
-  COUNTER_DAMAGE,
   JUDGMENT_WINDOWS,
   PLAYER_MAX_HP,
   TIER_DAMAGE_FACTOR,
@@ -67,15 +66,14 @@ export interface SlainEvent {
   readonly kind: MonsterKind
 }
 
-/** 墨妖反击：一次 Miss 换来的玩家掉血 */
-export interface CounterEvent {
-  readonly type: 'counter'
+/** 扑空（ADR-0011）：Miss 的剑气劈进空处——只有可见反馈，不掉血。
+ * 玩家血量的唯一来源是怪物推进到琴阵后的咬线（bite 事件）。 */
+export interface WhiffEvent {
+  readonly type: 'whiff'
   readonly time: number
-  /** 招致反击的漏接音符 */
+  /** 招致扑空的漏接音符 */
   readonly noteId: number
-  readonly damage: number
-  /** 反击后的玩家 HP（0 触发败局） */
-  readonly playerHp: number
+  readonly lane: Lane
 }
 
 /** 和弦重击：齐按窗口内同组和弦全部命中的加成一击 */
@@ -100,7 +98,7 @@ export interface OutcomeEvent {
 export type BattleEvent =
   | StrikeEvent
   | SlainEvent
-  | CounterEvent
+  | WhiffEvent
   | ChordEvent
   | SustainEvent
   | OutcomeEvent
@@ -353,9 +351,8 @@ export class Simulator {
         time,
         combo: 0,
       })
-      this.counter(note.id, time)
+      this.battle.push({ type: 'whiff', time, noteId: note.id, lane: note.lane })
       this.missScan += 1
-      if (this.battleStatus !== 'fighting') return events // 血空即定格
     }
     this.triggerSustains(time)
     if (time >= this.duration && this.battleStatus === 'fighting') {
@@ -442,13 +439,6 @@ export class Simulator {
       if (run > longestRun) longestRun = run
     }
     return { perfect, good, miss, longestRun }
-  }
-
-  /** Miss 结算：墨妖反击，玩家掉血；血空即败局 */
-  private counter(noteId: number, time: number): void {
-    this.hp = Math.max(0, this.hp - COUNTER_DAMAGE)
-    this.battle.push({ type: 'counter', time, noteId, damage: COUNTER_DAMAGE, playerHp: this.hp })
-    if (this.hp === 0) this.finish(time, 'defeat', 'player-hp-empty')
   }
 
   /** 终局定格：只发一次事件，此后一切输入失效 */

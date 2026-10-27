@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
-import type { Chart, ChartMeta, DifficultyName } from './chart'
+import type { DifficultyName } from './chart'
 import { BATTLEFIELD, COMBO_MULTIPLIER_STOPS, HORDE_PLAN } from './config'
-import { arrivalTimeAt, comboMultiplierFor, depthAt, focusedExpectedDamagePerNote, planMonsters } from './combat'
+import {
+  arrivalTimeAt,
+  comboMultiplierFor,
+  decayAt,
+  depthAt,
+  focusedExpectedDamagePerNote,
+  planMonsters,
+} from './combat'
 
 describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   it('无连击时倍率为 1（基线伤害）', () => {
@@ -37,7 +44,7 @@ describe('连击倍率曲线（连击抬升伤害倍率）', () => {
 function chartWithDifficulty(
   difficulty: DifficultyName,
   pairs: readonly (readonly [number, number])[],
-  phrases?: ConstructorParameters<typeof createChart>[1]['phrases'],
+  phrases?: readonly Phrase[],
 ): Chart {
   const meta: ChartMeta = {
     song: 'test-song',
@@ -271,65 +278,33 @@ describe('目标选择（怪物随段落出场；剑气劈空不记账）', () =
   })
 })
 
-/* ── Miss 反击与败局面（血空 / 歌毕怪未清） ────────────────────────── */
+/* ── 扑空（ADR-0011：miss 不再扣血，威胁完全来自怪物到位） ─────────── */
 
-import { COUNTER_DAMAGE, JUDGMENT_WINDOWS, PLAYER_MAX_HP } from './config'
+import { JUDGMENT_WINDOWS, PLAYER_MAX_HP } from './config'
 
-describe('Miss 反击（漏音符 → 墨妖反击 → 玩家掉血）', () => {
-  it('Miss 产生反击事件，玩家 HP 扣 COUNTER_DAMAGE，判走流不受影响', () => {
-    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(100)] })
+describe('扑空（miss 只留可见反馈，不掉血）', () => {
+  it('Miss 产生扑空战斗事件，玩家血量不动', () => {
+    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(100, 50)] })
     expect(sim.playerHp).toBe(PLAYER_MAX_HP)
 
     const judgments = sim.tick(1.0 + JUDGMENT_WINDOWS.good + 0.001)
 
     expect(judgments).toHaveLength(1) // 判定流仍只有 Miss 一条
-    expect(sim.playerHp).toBe(PLAYER_MAX_HP - COUNTER_DAMAGE)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP) // 血量纹丝不动
     const battle = sim.drainBattle()
     expect(battle).toHaveLength(1)
-    expect(battle[0]!.type).toBe('counter')
+    expect(battle[0]!.type).toBe('whiff')
     expect(sim.status).toBe('fighting')
   })
-})
 
-describe('败局（血空 / 歌毕怪未清，ADR-0004）', () => {
-  it('反击扣血至空 → 败局事件、状态定格，后续输入与时间推进全部失效', () => {
-    const chart = notesEverySecond(20)
-    const sim = new Simulator(chart, { monsters: [singleMonster(10000)] })
-    const fatalMisses = Math.ceil(PLAYER_MAX_HP / COUNTER_DAMAGE)
+  it('漏接整谱也不掉血：未到线的妖咬不到玩家（因果链：miss→输出下降→墨潮逼近）', () => {
+    const sim = new Simulator(notesEverySecond(20), { monsters: [singleMonster(10 ** 6, 40)] })
 
-    const judgments = sim.tick(100)
-    const battle = sim.drainBattle()
+    sim.tick(15) // 前段漏接；妖在深处（40s 才生成，行程 18s 未走完）
 
-    expect(sim.status).toBe('defeat')
-    expect(sim.playerHp).toBe(0)
-    expect(judgments).toHaveLength(fatalMisses) // 恰好打到血空的那些 Miss
-    expect(battle.filter((e) => e.type === 'counter')).toHaveLength(fatalMisses)
-    const outcome = outcomeOf(battle)
-    expect(outcome.result).toBe('defeat')
-    expect(outcome.reason).toBe('player-hp-empty')
-
-    // 定格：再怎么按、怎么推进都无事件无变化
-    const frozen = sim.keyDown(0, 50)
-    expect(frozen.events).toHaveLength(0)
-    expect(sim.tick(200)).toHaveLength(0)
-    expect(sim.drainBattle()).toHaveLength(0)
-    expect(sim.status).toBe('defeat')
-  })
-
-  it('玩家血未空但歌毕怪未清 → 败局（reason: monsters-remain）', () => {
-    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(10000)] })
-
-    sim.tick(1.0 + JUDGMENT_WINDOWS.good + 0.001) // 一次 Miss 反击，血未空
-    expect(sim.drainBattle().at(-1)!.type).toBe('counter')
-
-    sim.tick(3.1) // 谱面终点 3.0 已过
-    const battle = sim.drainBattle()
-    expect(battle).toHaveLength(1)
-    const outcome = outcomeOf(battle)
-    expect(outcome.result).toBe('defeat')
-    expect(outcome.reason).toBe('monsters-remain')
-    expect(sim.status).toBe('defeat')
-    expect(sim.playerHp).toBeGreaterThan(0)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+    expect(sim.status).toBe('fighting')
+    expect(sim.drainBattle().every((e) => e.type === 'whiff' || e.type === 'strike' === false)).toBe(true)
   })
 })
 
@@ -570,9 +545,6 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (di
 })
 
 /* ── 推进模型（工单 08，ADR-0011）：纵深纯函数 ─────────────────────── */
-
-import { BATTLEFIELD } from './config'
-import { arrivalTimeAt, decayAt, depthAt } from './combat'
 
 describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () => {
   it('生成时刻纵深最大；随后线性递减；抵达琴阵（纵深 0）后停住', () => {
