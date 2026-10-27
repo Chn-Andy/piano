@@ -6,11 +6,18 @@
  */
 
 import { createChart } from '../core/chart'
-import type { Chart, ChartMeta, Phrase } from '../core/chart'
+import type { Chart, ChartMeta, NoteTint, Phrase } from '../core/chart'
 
 /** 转换器落盘的谱面 JSON 契约（scripts/generate-charts.ts 的产物） */
 export interface ChartJson {
-  notes: readonly { id: number; time: number; lane: number; chordId?: number }[]
+  notes: readonly {
+    id: number
+    time: number
+    lane: number
+    chordId?: number
+    /** 异色词缀（工单 09）；缺省 = 普通音符 */
+    tint?: NoteTint
+  }[]
   meta: ChartMeta
   phrases: readonly Phrase[]
 }
@@ -18,7 +25,7 @@ export interface ChartJson {
 /** JSON → Chart：经 createChart 全量校验后装配（损坏即抛错，启动期暴露） */
 export function loadChart(json: ChartJson): Chart {
   return createChart(
-    json.notes.map((n) => (n.chordId === undefined ? [n.time, n.lane] : [n.time, n.lane, n.chordId])),
+    json.notes.map((n) => [n.time, n.lane, n.chordId, n.tint]),
     // JSON 产物由转换器生成并经 createChart 全量校验；此处仅放宽类型面
     { meta: json.meta, phrases: json.phrases },
   )

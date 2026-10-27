@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
-import type { DifficultyName } from './chart'
+import type { DifficultyName, NoteTint } from './chart'
 import {
   BATTLEFIELD,
   BASE_DAMAGE,
@@ -10,7 +10,9 @@ import {
   PLAYER_MAX_HP,
   SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
+  TINT_EFFECTS,
 } from './config'
+import { blastDamage, coldDelaySeconds, poisonTickCount, poisonTickDamage } from './tints'
 import {
   arrivalTimeAt,
   comboMultiplierFor,
@@ -833,5 +835,200 @@ describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () 
       expect(d, `t=${t} 衰减随推进单调不减`).toBeGreaterThanOrEqual(previous - 1e-12)
       previous = d
     }
+  })
+})
+
+/* ── 异色音符（工单 09，GLOSSARY：异色音符）────────────────────────── */
+
+describe('异色音符：三色效果（工单 09）', () => {
+  /** 单颗带词缀音符的谱面（余下一颗远端音符撑住谱面时长，避免提前收场） */
+  function tintedChart(time: number, tint: NoteTint): ReturnType<typeof createChart> {
+    return createChart([
+      [time, 0, undefined, tint],
+      [time + 30, 1],
+    ])
+  }
+
+  /** 一只已抵琴阵的怪（spawnAt 早于行程，t 时刻纵深 0） */
+  function atLine(hp: number, at = 1, id = 0): MonsterPlan {
+    return { id, kind: 'inkDemon', spawnAt: at - BATTLEFIELD.TRAVEL_SECONDS, hp }
+  }
+
+  it('寒音：全场怪物后退半步并减速——纵深变大、抵阵与咬击节奏整体后延', () => {
+    const sim = new Simulator(tintedChart(1, 'cold'), { monsters: [atLine(10_000)] })
+    sim.tick(0.9)
+    expect(depthAt(-18, 1), '施放前恰在琴阵（纵深 0）').toBe(0)
+
+    sim.keyDown(0, 1.0)
+
+    const view = sim.monstersView()[0]!
+    expect(view.holdBack, '行程后延 = 击退折算 + 减速折算').toBeCloseTo(coldDelaySeconds(), 9)
+    expect(view.slowedUntil, '减速状态可见 3 秒').toBeCloseTo(1 + TINT_EFFECTS.cold.SLOW_SECONDS, 9)
+    const pushed = depthAt(view.spawnAt, 1.0, view.holdBack)
+    expect(pushed, '被推离琴阵：纵深回到 0 以上').toBeGreaterThan(0)
+    expect(pushed, '半步量级：不到一个衰减级的两倍').toBeLessThan(BATTLEFIELD.AOE_LEVEL_DEPTH * 2)
+
+    const tintEvent = sim.drainBattle().find((e) => e.type === 'tint')
+    expect(tintEvent).toMatchObject({ kind: 'cold', targetIds: [0] })
+  })
+
+  it('寒音：咬击被打断——被推离琴阵的怪先走回线，再等一拍才咬', () => {
+    // 对照局：同谱面但不带词缀（寒音音符当普通音符用）
+    const control = new Simulator(createChart([[3, 0], [33, 1]]), { monsters: [atLine(10_000)] })
+    const chilled = new Simulator(tintedChart(3, 'cold'), { monsters: [atLine(10_000)] })
+
+    for (const sim of [control, chilled]) {
+      sim.tick(2.9)
+      sim.keyDown(0, 3.0)
+      sim.tick(5.0)
+    }
+
+    const bitesAfter = (sim: Simulator): number =>
+      sim.drainBattle().filter((e) => e.type === 'bite' && e.time > 3.0).length
+    expect(bitesAfter(control), '对照局：4、5 秒各一口').toBe(2)
+    expect(bitesAfter(chilled), '寒音后延 3.4 秒：推离琴阵后这段时间一口也咬不到').toBe(0)
+  })
+
+  it('寒音：后延封顶于全程行程，且不重放历史咬口（不掉二次血）', () => {
+    const sim = new Simulator(
+      createChart([[1, 0, undefined, 'cold'], [3, 1, undefined, 'cold'], [5, 2, undefined, 'cold']]),
+      { monsters: [atLine(10_000, 1)] },
+    )
+    for (const at of [1, 3, 5]) {
+      sim.tick(at - 0.1)
+      sim.keyDown(sim.pendingNotes()[0]!.lane, at)
+    }
+    const view = sim.monstersView()[0]!
+    expect(view.holdBack).toBeLessThanOrEqual(BATTLEFIELD.TRAVEL_SECONDS)
+    const bites = sim.drainBattle().filter((e) => e.type === 'bite')
+    const times = bites.map((e) => e.time)
+    expect(new Set(times).size, '咬击时刻互不重复').toBe(times.length)
+    expect(sim.playerHp, '咬口总伤害 = 口数 × 每口伤害').toBe(
+      PLAYER_MAX_HP - bites.length * BATTLEFIELD.BITE_DAMAGE,
+    )
+  })
+
+  it('毒音：最前怪中毒，每拍一跳、共 5 秒，按自身最大生命结算', () => {
+    const hp = 1000
+    const sim = new Simulator(tintedChart(1, 'toxic'), { monsters: [atLine(hp)] })
+    sim.tick(0.9)
+    sim.keyDown(0, 1.0)
+    const afterStrike = sim.monstersView()[0]!.hp
+    expect(afterStrike).toBeLessThan(hp)
+
+    sim.tick(6.05)
+
+    const poison = sim.drainBattle().filter((e) => e.type === 'poison')
+    expect(poison, '跳数 = 持续时间 / 参考拍长').toHaveLength(poisonTickCount())
+    for (const tick of poison) {
+      expect(tick).toMatchObject({ monsterId: 0 })
+      expect(tick.damage).toBeCloseTo(poisonTickDamage(hp), 9)
+    }
+    const total = poison.reduce((sum, e) => sum + e.damage, 0)
+    expect(total).toBeCloseTo(hp * TINT_EFFECTS.toxic.POISON_FRACTION_PER_BEAT * poisonTickCount(), 9)
+    expect(sim.monstersView()[0]!.hp).toBeCloseTo(afterStrike - total, 9)
+  })
+
+  it('毒音：跳时刻与 tick 粒度无关（一步跨 5 秒 = 逐帧推进）', () => {
+    const coarse = new Simulator(tintedChart(1, 'toxic'), { monsters: [atLine(1000)] })
+    const fine = new Simulator(tintedChart(1, 'toxic'), { monsters: [atLine(1000)] })
+    coarse.tick(0.9)
+    fine.tick(0.9)
+    coarse.keyDown(0, 1.0)
+    fine.keyDown(0, 1.0)
+
+    coarse.tick(6.05)
+    for (let t = 1.05; t <= 6.05; t += 0.05) fine.tick(t)
+
+    const ticks = (sim: Simulator): number[] =>
+      sim.drainBattle().filter((e) => e.type === 'poison').map((e) => Number(e.time.toFixed(6)))
+    expect(ticks(coarse)).toEqual(ticks(fine))
+    expect(coarse.monstersView()[0]!.hp).toBeCloseTo(fine.monstersView()[0]!.hp, 9)
+  })
+
+  it('毒音：毒得死——跳伤归零即击杀入流，剩余跳数不再补', () => {
+    const hp = 30
+    const chart = createChart([
+      [1, 0],
+      [3, 1, undefined, 'toxic'],
+      [33, 2],
+    ])
+    const sim = new Simulator(chart, { monsters: [atLine(hp)] })
+    sim.tick(0.9)
+    sim.keyDown(0, 1.0) // 普通命中：30 → 20
+    sim.tick(2.9)
+    sim.keyDown(1, 3.0) // 毒音命中：20 → 10，同时中毒
+    sim.tick(9.0)
+
+    const battle = sim.drainBattle()
+    const slain = battle.filter((e) => e.type === 'slain')
+    expect(slain.length, '至多一次击杀').toBeLessThanOrEqual(1)
+    expect(sim.monstersView()[0]!.hp).toBe(0)
+    const poison = battle.filter((e) => e.type === 'poison')
+    const total = poison.reduce((sum, e) => sum + e.damage, 0)
+    expect(total, '伤害不超过身板（溢出不吃）').toBeLessThanOrEqual(hp)
+  })
+
+  it('爆音：最前与次前各受一记按身板的重击，第三只不吃；深处也吃满（无视纵深）', () => {
+    const hp = 1000
+    const plan: readonly MonsterPlan[] = [
+      atLine(hp, 1, 0), // 纵深 0
+      { id: 1, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS / 2, hp }, // 纵深 5
+      { id: 2, kind: 'inkDemon', spawnAt: 1, hp }, // 纵深 10（战场最深处）
+    ]
+    const sim = new Simulator(tintedChart(1, 'blast'), { monsters: plan })
+    sim.tick(0.9)
+    sim.keyDown(0, 1.0)
+
+    const views = sim.monstersView()
+    const blast = blastDamage(hp)
+    const strike = BASE_DAMAGE * comboMultiplierFor(1)
+    expect(views[0]!.hp, '最前：剑气全额 + 重击').toBeCloseTo(hp - strike - blast, 9)
+    expect(views[1]!.hp, '次前：剑气衰减 + 重击').toBeCloseTo(hp - strike * decayAt(plan[1]!.spawnAt, 1.0) - blast, 9)
+    expect(views[2]!.hp, '第三只：只有衰减剑气').toBeCloseTo(hp - strike * decayAt(plan[2]!.spawnAt, 1.0), 9)
+
+    const tintEvent = sim.drainBattle().find((e) => e.type === 'tint')
+    expect(tintEvent).toMatchObject({ kind: 'blast', targetIds: [0, 1] })
+  })
+
+  it('空场扑空：三种词缀都照发事件、不崩溃，判定与连击不受影响', () => {
+    for (const kind of ['cold', 'toxic', 'blast'] as const) {
+      const sim = new Simulator(tintedChart(1, kind), { monsters: [] })
+      sim.tick(0.9)
+      const outcome = sim.keyDown(0, 1.0)
+      expect(outcome.events[0]).toMatchObject({ judgment: 'Perfect', combo: 1 })
+      const tintEvent = sim.drainBattle().find((e) => e.type === 'tint')
+      expect(tintEvent, `${kind} 的事件照发`).toMatchObject({ kind, targetIds: [] })
+    }
+  })
+
+  it('词缀不改变判定：同一时刻的同色/普通音符给出相同判定与连击', () => {
+    const plain = new Simulator(createChart([[1, 0], [31, 1]]), { monsters: [] })
+    const tinted = new Simulator(tintedChart(1, 'toxic'), { monsters: [] })
+    plain.tick(0.9)
+    tinted.tick(0.9)
+    const a = plain.keyDown(0, 1.06)
+    const b = tinted.keyDown(0, 1.06)
+    expect(b.events[0]).toMatchObject({ judgment: 'Good', combo: 1 })
+    expect(b.events[0]!.judgment).toBe(a.events[0]!.judgment)
+  })
+
+  it('和弦成员共享词缀：整组只结算一次效果', () => {
+    const chart = createChart([
+      [1, 0, 0, 'cold'],
+      [1, 1, 0, 'cold'],
+      [31, 2],
+    ])
+    const sim = new Simulator(chart, { monsters: [atLine(10_000)] })
+    sim.tick(0.9)
+    sim.keyDown(0, 1.0)
+    sim.keyDown(1, 1.02)
+    sim.keyUp(0)
+    sim.keyUp(1)
+
+    const tintEvents = sim.drainBattle().filter((e) => e.type === 'tint')
+    expect(tintEvents, '两键和弦只触发一次寒音').toHaveLength(1)
+    const view = sim.monstersView()[0]!
+    expect(view.holdBack, '后延只加一层').toBeCloseTo(coldDelaySeconds(), 9)
   })
 })

@@ -23,7 +23,8 @@
     {
       "id": 4,
       "time": 9,
-      "lane": 3
+      "lane": 3,
+      "tint": "toxic"
     },
     {
       "id": 5,
@@ -123,7 +124,8 @@
     {
       "id": 24,
       "time": 49,
-      "lane": 0
+      "lane": 0,
+      "tint": "blast"
     },
     {
       "id": 25,
@@ -208,7 +210,8 @@
     {
       "id": 41,
       "time": 89,
-      "lane": 1
+      "lane": 1,
+      "tint": "cold"
     },
     {
       "id": 42,
@@ -308,7 +311,8 @@
     {
       "id": 61,
       "time": 129,
-      "lane": 0
+      "lane": 0,
+      "tint": "cold"
     },
     {
       "id": 62,
@@ -363,7 +367,8 @@
     {
       "id": 72,
       "time": 155,
-      "lane": 5
+      "lane": 5,
+      "tint": "cold"
     },
     {
       "id": 73,
