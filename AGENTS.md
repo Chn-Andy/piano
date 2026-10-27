@@ -14,4 +14,4 @@ Issue 与 spec 以本地 markdown 文件追踪于 `.scratch/<feature>/`（当前
 
 ### Domain docs
 
-单上下文布局：根目录 `GLOSSARY.md` + `docs/adr/`（现有 0001–0009）。见 `docs/agents/domain.md`。
+单上下文布局：根目录 `GLOSSARY.md` + `docs/adr/`（现有 0001–0012）。见 `docs/agents/domain.md`。

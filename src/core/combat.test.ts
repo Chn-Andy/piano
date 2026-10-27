@@ -706,43 +706,60 @@ describe('胜局（歌毕 + 场上怪清完）', () => {
   })
 })
 
-/* ── 定标性质：真实卡农谱面（Seam 1 吃真实谱面产物，锁「可胜可败」差距） ── */
+/* ── 定标性质：真实谱面产物（Seam 1 吃真实 JSON，锁「可胜可败」差距）──────
+ * 工单 08 立规矩、工单 11 扩到三曲 × 三难度：完美与认真玩家守得住，
+ * 普通玩家（三失其一）守不住，静置必被咬空。这四条是数值改动的红线——
+ * 任何常量调整都要重新跑一遍这组性质。
+ */
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Chart, ChartMeta, Phrase } from './chart'
 
-interface CanonJson {
-  notes: readonly { id: number; time: number; lane: number; chordId?: number }[]
+interface ChartJsonFile {
+  notes: readonly { id: number; time: number; lane: number; chordId?: number; tint?: NoteTint }[]
   meta: ChartMeta
   phrases: readonly Phrase[]
 }
 
-function canonChart(difficulty: 'easy' | 'medium' | 'hard'): Chart {
-  const path = join(import.meta.dirname, '..', 'charts', 'canon', `${difficulty}.json`)
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as CanonJson
+/** 读入入库产物（与装配层同一条路：JSON → createChart 全量再校验） */
+function songChart(dir: string, difficulty: 'easy' | 'medium' | 'hard'): Chart {
+  const path = join(import.meta.dirname, '..', 'charts', dir, difficulty + '.json')
+  const raw = JSON.parse(readFileSync(path, 'utf-8')) as ChartJsonFile
   return createChart(
-    raw.notes.map((n) => (n.chordId === undefined ? [n.time, n.lane] : [n.time, n.lane, n.chordId])),
+    raw.notes.map((n) => [n.time, n.lane, n.chordId, n.tint]),
     { meta: raw.meta, phrases: raw.phrases },
   )
 }
 
-/** 弹奏模型：是否接住某音符、按键偏移多少（独立于实现的"玩家"假设） */
+/** 弹奏模型：是否接住某音符、按键偏移多少（独立于实现的「玩家」假设） */
 interface PlayStyle {
   readonly name: string
   hits(noteId: number): boolean
   offset(noteId: number): number
 }
 
-/** 整首驱动：按模型弹完 + 冲刷 Miss + 推到歌末，返回终局模拟器 */
+/**
+ * 整首驱动：按模型弹完 + 冲刷 Miss + 推到歌末，返回终局模拟器。
+ * 同刻音符（和弦成员）必须**一次按完再推进时钟**——逐颗按会先 tick 一次，
+ * 把和弦里还没按的成员直接判成 Miss（工单 11 扩到带和弦的谱面时暴露）。
+ */
 function playThrough(chart: Chart, style: PlayStyle): Simulator {
   const sim = new Simulator(chart)
-  for (const note of chart.notes) {
-    if (style.hits(note.id)) {
+  let index = 0
+  while (index < chart.notes.length) {
+    const time = chart.notes[index]!.time
+    const group: typeof chart.notes[number][] = []
+    while (index < chart.notes.length && chart.notes[index]!.time === time) {
+      group.push(chart.notes[index]!)
+      index += 1
+    }
+    for (const note of group) {
+      if (!style.hits(note.id)) continue
       sim.keyDown(note.lane, note.time + style.offset(note.id))
       sim.keyUp(note.lane)
     }
-    sim.tick(note.time + JUDGMENT_WINDOWS.good + 0.01)
+    sim.tick(time + JUDGMENT_WINDOWS.good + 0.01)
   }
   sim.tick(chart.duration + 0.01)
   return sim
@@ -752,7 +769,7 @@ function playThrough(chart: Chart, style: PlayStyle): Simulator {
 const IDLE: PlayStyle = { name: '静置', hits: () => false, offset: () => 0 }
 
 const PERFECT: PlayStyle = { name: '完美', hits: () => true, offset: () => 0 }
-/** 认真玩家：每音必接（每 20 颗失手一颗），抖动在 Perfect 窗内 */
+/** 认真玩家：每 20 颗失手一颗，抖动在 Perfect 窗内 */
 const FOCUSED: PlayStyle = {
   name: '认真',
   hits: (id) => id % 20 !== 19,
@@ -765,9 +782,24 @@ const CASUAL: PlayStyle = {
   offset: (id) => ((id % 5) * 0.02) - 0.02,
 }
 
-describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工单 08：墨潮守线）', (difficulty) => {
-  it('完美弹奏：每个音都判出，整首不断裂，终局胜利', () => {
-    const chart = canonChart(difficulty)
+/** 三曲 × 三难度（工单 11：九张谱面全量性质） */
+const CHART_MATRIX = (
+  [
+    { dir: 'canon', title: '卡农' },
+    { dir: 'fur-elise', title: '致爱丽丝' },
+    { dir: 'chun-jiang', title: '春江花月夜' },
+  ] as const
+).flatMap((song) =>
+  (['easy', 'medium', 'hard'] as const).map((difficulty) => ({
+    dir: song.dir,
+    title: song.title,
+    difficulty,
+  })),
+)
+
+describe.each(CHART_MATRIX)('定标性质：$title $difficulty（工单 11：三曲 × 三难度）', ({ dir, difficulty }) => {
+  it('完美弹奏：每个音都判出，终局胜利', () => {
+    const chart = songChart(dir, difficulty)
     const sim = playThrough(chart, PERFECT)
 
     const s = sim.summary()
@@ -776,18 +808,18 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工
   })
 
   it('认真弹奏（95% 命中 + Perfect 抖动）：守得住琴阵，撑到歌末清场获胜', () => {
-    const sim = playThrough(canonChart(difficulty), FOCUSED)
+    const sim = playThrough(songChart(dir, difficulty), FOCUSED)
     expect(sim.status).toBe('victory')
     expect(sim.playerHp, '认真玩家不该被打穿').toBeGreaterThanOrEqual(PLAYER_MAX_HP / 2)
   })
 
   it('普通弹奏（三失其一）：守线失败（血空或怪残留），败局', () => {
-    const sim = playThrough(canonChart(difficulty), CASUAL)
+    const sim = playThrough(songChart(dir, difficulty), CASUAL)
     expect(sim.status).toBe('defeat')
   })
 
   it('静置弹奏：墨潮推进到琴阵咬空血量——血量威胁完全来自怪物到位', () => {
-    const sim = playThrough(canonChart(difficulty), IDLE)
+    const sim = playThrough(songChart(dir, difficulty), IDLE)
     const battle = drainedOf(sim)
     expect(sim.status).toBe('defeat')
     expect(outcomeOf(battle).reason).toBe('player-hp-empty')
