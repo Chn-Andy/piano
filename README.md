@@ -40,13 +40,15 @@ v1.1 的战斗：墨妖成群自战场深处向**琴阵**推进，miss 只让剑
 ### GitHub Pages
 
 1. **建仓**：github.com 网页上 New repository（例如 `piano`，Public，不要初始化 README）。
-2. **推送**：在仓库根目录执行（替换 `<用户名>/<仓库名>`）：
+2. **推送**：工作分支是 `xinqin-v1`（`main` 不在本机），推成远端的 `main` 即可
+   （替换 `<用户名>/<仓库名>`）：
    ```bash
    git remote add origin git@github.com:<用户名>/<仓库名>.git   # 或 https://github.com/<用户名>/<仓库名>.git
-   git push -u origin main
+   git push -u origin xinqin-v1:main
    ```
    推送 `main` 会触发 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)：
-   测试 → 构建 → 部署（全部官方 actions）。
+   测试 → 构建 → 部署（全部官方 actions）。之后本地再更新，仍是
+   `git push origin xinqin-v1:main`。
 3. **启用 Pages**：仓库网页 Settings → Pages → Build and deployment →
    Source 选 **GitHub Actions**（不是 Deploy from a branch）。保存后等 workflow 跑绿。
 4. **游玩地址**：`https://<用户名>.github.io/<仓库名>/`（产物为相对路径 base，
@@ -68,7 +70,7 @@ v1.1 的战斗：墨妖成群自战场深处向**琴阵**推进，miss 只让剑
 | 资产 | 体积 | 加载时机 |
 |---|---|---|
 | index.html | 6.4 KB（gzip 1.75 KB） | 首屏 |
-| JS 产物（含 3 曲 × 3 难度谱面 JSON 与全部代码） | 119 KB（gzip 32 KB） | 首屏 |
+| JS 产物（含 3 曲 × 3 难度谱面 JSON 与全部代码） | 134 KB（gzip 36 KB） | 首屏 |
 | 钢琴采样 5 × mp3 | 936 KB | 首次用户手势后一次性预取并解码 |
 
 - **首屏**（标题画面）只拉 HTML + JS（gzip 约 34 KB），零音频请求——
