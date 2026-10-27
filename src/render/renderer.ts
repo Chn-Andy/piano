@@ -62,9 +62,8 @@ export interface TintFeedback {
 /** 最近一次琴心通明（工单 10）：战场区的一圈墨爆，与余韵的收势演出分开 */
 export interface QinxinFeedback {
   readonly at: number
+  /** 第几炮（决定墨环的旋向错开，连放时不重影） */
   readonly index: number
-  readonly damage: number
-  readonly targetIds: readonly number[]
 }
 
 export interface RenderModel {

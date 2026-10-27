@@ -577,8 +577,7 @@ function collectBattle(events: readonly BattleEvent[]): void {
       engine.tintStrike(engine.now() + PLAY_EPSILON, e.kind)
     } else if (e.type === 'qinxin') {
       // 琴心通明（工单 10）：战场区墨爆 + 向上的拨弦声；不抢音符流
-      qinxins.push({ at: e.time, index: e.index, damage: e.damage, targetIds: e.targetIds })
-      debugView.qinxinReleases = e.index
+      qinxins.push({ at: e.time, index: e.index })
       engine.qinxinBurst(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'poison') {
       // 中毒跳伤：极轻的滴声（状态层，不抢注意力）

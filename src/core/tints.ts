@@ -11,9 +11,6 @@ import type { NoteTint } from './chart'
 import { advanceSpeed } from './combat'
 import { BATTLEFIELD, TINT_EFFECTS, TINT_PLAN } from './config'
 
-/** 三色（顺序即加权抽签的序；UI、渲染与音效也按此序） */
-export const TINT_KINDS = ['cold', 'toxic', 'blast'] as const
-
 /** 中文名（GLOSSARY：寒音 / 毒音 / 爆音） */
 export const TINT_LABELS: Record<NoteTint, string> = {
   cold: '寒音',
@@ -34,7 +31,7 @@ export function coldDelaySeconds(): number {
 }
 
 /** 寒音后延的封顶：全程行程（再退就退出战场之外了） */
-export function coldDelayCapSeconds(): number {
+function coldDelayCapSeconds(): number {
   return BATTLEFIELD.TRAVEL_SECONDS
 }
 
