@@ -49,7 +49,12 @@ export function arrivalTimeAt(spawnAt: number, holdBack = 0): number {
  */
 export function depthAt(spawnAt: number, t: number, holdBack = 0): number {
   if (t <= spawnAt) return BATTLEFIELD.SPAWN_DEPTH
-  return Math.max(0, BATTLEFIELD.SPAWN_DEPTH - advanceSpeed() * (t - spawnAt - holdBack))
+  // 后延可能大于「已推进的时长」（刚生成的怪挨了一记寒音）：此时不得被推出
+  // 战场之外——纵深封顶在生成深度，怪在尽头「卡住」等推进时钟追上。
+  return Math.min(
+    BATTLEFIELD.SPAWN_DEPTH,
+    Math.max(0, BATTLEFIELD.SPAWN_DEPTH - advanceSpeed() * (t - spawnAt - holdBack)),
+  )
 }
 
 /** 纵深 → 衰减级数（封顶）：离琴阵每 LEVEL_DEPTH 度深一级 */

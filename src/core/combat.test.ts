@@ -909,6 +909,20 @@ describe('异色音符：三色效果（工单 09）', () => {
     expect(tintEvent).toMatchObject({ kind: 'cold', targetIds: [0] })
   })
 
+  it('寒音：刚生成的怪不会被推出战场之外（纵深封顶在生成深度）', () => {
+    // 怪在 t=2.0 入场、寒音在 t=2.05 命中：后延 3.4s 远大于已推进的 0.05s
+    const sim = new Simulator(createChart([[2.05, 0, undefined, 'cold'], [32, 1]]), {
+      monsters: [{ id: 0, kind: 'inkDemon', spawnAt: 2, hp: 10_000 }],
+    })
+    sim.tick(1.9)
+    sim.keyDown(0, 2.05)
+
+    const view = sim.monstersView()[0]!
+    const depth = depthAt(view.spawnAt, 2.05, view.holdBack)
+    expect(depth, '纵深不超过生成深度').toBeLessThanOrEqual(BATTLEFIELD.SPAWN_DEPTH)
+    expect(depth, '仍贴在战场最深处').toBeCloseTo(BATTLEFIELD.SPAWN_DEPTH, 9)
+  })
+
   it('寒音：咬击被打断——被推离琴阵的怪先走回线，再等一拍才咬', () => {
     // 对照局：同谱面但不带词缀（寒音音符当普通音符用）
     const control = new Simulator(createChart([[3, 0], [33, 1]]), { monsters: [atLine(10_000)] })
