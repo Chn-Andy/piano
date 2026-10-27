@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
-import { COMBO_MULTIPLIER_STOPS, MONSTER_PLAN } from './config'
-import { comboMultiplierFor, planMonsters } from './combat'
+import type { Chart, ChartMeta, DifficultyName } from './chart'
+import { BATTLEFIELD, COMBO_MULTIPLIER_STOPS, HORDE_PLAN } from './config'
+import { arrivalTimeAt, comboMultiplierFor, depthAt, focusedExpectedDamagePerNote, planMonsters } from './combat'
 
 describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   it('无连击时倍率为 1（基线伤害）', () => {
@@ -30,58 +31,118 @@ describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   })
 })
 
-describe('墨妖出场计划（怪物随歌分段出场，墨主压轴）', () => {
-  /** 每 2 秒一音、跨 span 秒的合成谱面 */
-  function chartEvery2Seconds(count: number): ReturnType<typeof createChart> {
-    const pairs = Array.from({ length: count }, (_, i) => [1 + i * 2, i % 5] as const)
-    return createChart(pairs)
-  }
+/* ── 墨潮生成（工单 08：波次 × 群落，生成节奏随难度，确定性） ──────── */
 
-  it('按 SEGMENT_SECONDS 分段：每段一只墨妖，最后一段为墨主', () => {
-    // 跨度 62 秒（1..63）→ 30s 分段 → [1,31) [31,61) [61,63] 三段
-    const chart = chartEvery2Seconds(32)
+/** 带难度元数据的谱面构造（难度决定波宽与群落大小） */
+function chartWithDifficulty(
+  difficulty: DifficultyName,
+  pairs: readonly (readonly [number, number])[],
+  phrases?: ConstructorParameters<typeof createChart>[1]['phrases'],
+): Chart {
+  const meta: ChartMeta = {
+    song: 'test-song',
+    title: '测试曲',
+    difficulty,
+    keys: Array.from({ length: 7 }, (_, i) => ['C', 'D', 'E', 'F', 'G', 'A', 'B'][i]!),
+    quantizeGrid: 0.25,
+  }
+  return createChart(pairs, { meta, ...(phrases !== undefined ? { phrases } : {}) })
+}
+
+/** 每 step 秒一音、跨 span 秒的合成谱面（带难度元数据） */
+function pacedChart(difficulty: DifficultyName, step: number, count: number): Chart {
+  return chartWithDifficulty(
+    difficulty,
+    Array.from({ length: count }, (_, i) => [1 + i * step, i % 5] as const),
+  )
+}
+
+describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
+  it('按难度波宽分波：每波一群墨妖自波首错峰入场；最后一带为墨主（独行）', () => {
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    const stagger = HORDE_PLAN.GROUP_STAGGER_SECONDS
+    // 跨度跨三波：1 + 2×wave + 5 < 末音符 → 第三波为墨主波
+    const count = Math.ceil((2 * wave + 5) / 1) + 1
+    const chart = pacedChart('medium', 1, count)
     const plan = planMonsters(chart)
 
-    expect(plan).toHaveLength(3)
-    expect(plan.slice(0, -1).every((m) => m.kind === 'inkDemon')).toBe(true)
-    expect(plan[plan.length - 1]!.kind).toBe('inkLord')
-    const first = chart.notes[0]!.time
-    expect(plan.map((m) => m.spawnAt)).toEqual([
-      first,
-      first + MONSTER_PLAN.SEGMENT_SECONDS,
-      first + 2 * MONSTER_PLAN.SEGMENT_SECONDS,
-    ])
+    const demons = plan.filter((m) => m.kind === 'inkDemon')
+    const lords = plan.filter((m) => m.kind === 'inkLord')
+    expect(lords, '恰一只墨主压轴').toHaveLength(1)
+    expect(lords[0]!.spawnAt, '墨主于末波波首登场').toBe(chart.notes[0]!.time + 2 * wave)
+    expect(demons, '前两波各一群').toHaveLength(2 * HORDE_PLAN.GROUP_SIZE.medium)
+    const wave1 = demons.filter((m) => m.spawnAt < chart.notes[0]!.time + wave)
+    expect(wave1).toHaveLength(HORDE_PLAN.GROUP_SIZE.medium)
+    expect(wave1.map((m) => m.spawnAt)).toEqual([
+      1,
+      1 + stagger,
+      1 + 2 * stagger,
+    ].slice(0, HORDE_PLAN.GROUP_SIZE.medium))
   })
 
-  it('短谱（不足两段）只有一只墨妖，不生成墨主', () => {
-    const plan = planMonsters(chartEvery2Seconds(5))
-    expect(plan).toHaveLength(1)
-    expect(plan[0]!.kind).toBe('inkDemon')
+  it('生成节奏随难度：hard 波宽更窄、群落更大', () => {
+    expect(HORDE_PLAN.WAVE_SECONDS.hard).toBeLessThan(HORDE_PLAN.WAVE_SECONDS.medium)
+    expect(HORDE_PLAN.GROUP_SIZE.hard).toBeGreaterThan(HORDE_PLAN.GROUP_SIZE.medium)
+    // 同一谱面：hard 的第二波来得更早（取群内已越出第一波的最早入场）
+    const span = HORDE_PLAN.WAVE_SECONDS.medium * 3
+    const count = span + 2
+    const medium = planMonsters(pacedChart('medium', 1, count))
+    const hard = planMonsters(pacedChart('hard', 1, count))
+    const mediumSecondWave = medium.find((m) => m.spawnAt > 1 + 20)!
+    const hardSecondWave = hard.find((m) => m.spawnAt > 1 + 20)!
+    expect(hardSecondWave.spawnAt).toBeLessThan(mediumSecondWave.spawnAt)
   })
 
-  it('墨妖 HP 随所在段音符数缩放（密段更厚），且为正整数', () => {
-    // 第一段 [1,31) 每 2 秒一音 = 15 音；第二段 [31,60] 每 1 秒一音 = 30 音
+  it('HP 随波内音符数缩放且为正整数', () => {
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    // 三波：波一 15 音（每 2 秒一音）、波二 30 音（每 1 秒一音）、波三墨主
     const sparse = Array.from({ length: 15 }, (_, i) => [1 + i * 2, i % 5] as const)
-    const dense = Array.from({ length: 30 }, (_, i) => [31 + i, i % 5] as const)
-    const plan = planMonsters(createChart([...sparse, ...dense]))
+    const dense = Array.from({ length: 30 }, (_, i) => [2 + wave + i, i % 5] as const)
+    const plan = planMonsters(
+      chartWithDifficulty('medium', [...sparse, ...dense, [1 + 2 * wave + 1, 0]]),
+    )
     for (const m of plan) {
       expect(Number.isInteger(m.hp)).toBe(true)
       expect(m.hp).toBeGreaterThan(0)
-      expect(m.id).toBeGreaterThanOrEqual(0)
     }
-    expect(plan[1]!.hp, '两倍音符的段，HP 至少 1.5 倍').toBeGreaterThanOrEqual(plan[0]!.hp * 1.5)
+    const demonHp = plan.filter((m) => m.kind === 'inkDemon').map((m) => m.hp)
+    expect(demonHp).toHaveLength(2 * HORDE_PLAN.GROUP_SIZE.medium)
+    expect(demonHp[0]!, '波一 15 音的每只妖').toBeGreaterThan(0)
+    expect(demonHp[HORDE_PLAN.GROUP_SIZE.medium]!, '两倍音符的波，每只妖 HP 同倍（±取整）').toBeLessThanOrEqual(
+      demonHp[0]! * 2 + 1,
+    )
+    expect(demonHp[HORDE_PLAN.GROUP_SIZE.medium]!).toBeGreaterThanOrEqual(demonHp[0]! * 2 - 1)
   })
 
-  it('同样音符数的段：墨主比墨妖更厚', () => {
-    // 两段各 15 音（每 2 秒一音）：[1,31) 与 [31,59]
-    const chart = chartEvery2Seconds(30)
-    const plan = planMonsters(chart)
-    const lord = plan[plan.length - 1]!
-    expect(lord.hp).toBeGreaterThan(plan[0]!.hp)
+  it('斩首预算不变式：带乐句谱面的墨主 HP ≤ 终章乐句预算 × LORD_HP_FRACTION', () => {
+    // 两乐句谱面：末乐句 4 音；谱面跨两波使末波为墨主波
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    const notes: (readonly [number, number])[] = []
+    for (let i = 0; i < wave + 4; i += 1) notes.push([1 + i, i % 5])
+    const phrases = [
+      { id: 0, start: 1, end: wave, sustainStart: wave, sustainEnd: wave + 0.6 },
+      {
+        id: 1,
+        start: 1 + wave,
+        end: 1 + wave + 3,
+        sustainStart: 1 + wave + 3,
+        sustainEnd: 1 + wave + 3.6,
+      },
+    ]
+    const chart = chartWithDifficulty('medium', notes, phrases)
+    const lord = planMonsters(chart).find((m) => m.kind === 'inkLord')!
+    const finaleBudget = 4 * focusedExpectedDamagePerNote()
+    expect(lord.hp).toBeLessThanOrEqual(Math.ceil(finaleBudget * HORDE_PLAN.LORD_HP_FRACTION))
   })
 
-  it('计划是纯函数：同一谱面两次规划完全一致', () => {
-    const chart = chartEvery2Seconds(20)
+  it('短谱（不足两波）只有一群墨妖，不生成墨主；空谱无计划', () => {
+    const short = planMonsters(pacedChart('medium', 2, 8))
+    expect(short.every((m) => m.kind === 'inkDemon')).toBe(true)
+    expect(planMonsters(createChart([]))).toEqual([])
+  })
+
+  it('计划是纯函数：同一谱面两次规划完全一致（同曲重开一致）', () => {
+    const chart = pacedChart('hard', 1, 120)
     expect(planMonsters(chart)).toEqual(planMonsters(chart))
   })
 })
@@ -505,5 +566,44 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (di
   it('普通弹奏（三失其一）：打不完这整首（败局）', () => {
     const sim = playThrough(canonChart(difficulty), CASUAL)
     expect(sim.status).toBe('defeat')
+  })
+})
+
+/* ── 推进模型（工单 08，ADR-0011）：纵深纯函数 ─────────────────────── */
+
+import { BATTLEFIELD } from './config'
+import { arrivalTimeAt, decayAt, depthAt } from './combat'
+
+describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () => {
+  it('生成时刻纵深最大；随后线性递减；抵达琴阵（纵深 0）后停住', () => {
+    const spawnAt = 5
+    expect(depthAt(spawnAt, spawnAt)).toBe(BATTLEFIELD.SPAWN_DEPTH)
+    expect(depthAt(spawnAt, spawnAt - 1), '未生成的怪在深处待命').toBe(BATTLEFIELD.SPAWN_DEPTH)
+
+    const mid = depthAt(spawnAt, spawnAt + BATTLEFIELD.TRAVEL_SECONDS / 2)
+    expect(mid).toBeCloseTo(BATTLEFIELD.SPAWN_DEPTH / 2, 9)
+
+    const arrival = arrivalTimeAt(spawnAt)
+    expect(arrival).toBeCloseTo(spawnAt + BATTLEFIELD.TRAVEL_SECONDS, 9)
+    expect(depthAt(spawnAt, arrival)).toBe(0)
+    expect(depthAt(spawnAt, arrival + 100), '到线后不再越过琴阵').toBe(0)
+  })
+
+  it('纵深衰减：琴阵前全额，每级 ×DECAY_RATIO，级数封顶', () => {
+    const spawnAt = 0
+    expect(decayAt(spawnAt, BATTLEFIELD.TRAVEL_SECONDS), '已抵琴阵：全额承伤').toBe(1)
+
+    const oneLevel = BATTLEFIELD.TRAVEL_SECONDS - BATTLEFIELD.AOE_LEVEL_DEPTH / (BATTLEFIELD.SPAWN_DEPTH / BATTLEFIELD.TRAVEL_SECONDS)
+    expect(decayAt(spawnAt, oneLevel)).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO, 9)
+
+    const capped = decayAt(spawnAt, 0) // 纵深 SPAWN_DEPTH ≥ CAP×LEVEL_DEPTH → 封顶
+    expect(capped).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP, 9)
+
+    let previous = 0
+    for (let t = 0; t <= BATTLEFIELD.TRAVEL_SECONDS; t += 0.5) {
+      const d = decayAt(spawnAt, t)
+      expect(d, `t=${t} 衰减随推进单调不减`).toBeGreaterThanOrEqual(previous - 1e-12)
+      previous = d
+    }
   })
 })
