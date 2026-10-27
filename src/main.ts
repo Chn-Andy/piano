@@ -765,13 +765,10 @@ function pruneExpired<T>(list: T[], t: number, keep: number, at: (item: T) => nu
 }
 
 function prune(t: number): void {
-  pruneExpired(flashes, t, FLASH_KEEP, (f) => f.at)
-  pruneExpired(hits, t, FLASH_KEEP, (h) => h.at)
-  pruneExpired(slains, t, FLASH_KEEP, (s) => s.at)
-  pruneExpired(bites, t, FLASH_KEEP, (b) => b.at)
-  pruneExpired(whiffs, t, FLASH_KEEP, (wf) => wf.at)
-  pruneExpired(tints, t, FLASH_KEEP, (tf) => tf.at)
-  pruneExpired(qinxins, t, FLASH_KEEP, (q) => q.at)
+  // 短命反馈（都带 at）与余韵（按窗口尾）分开裁剪——新增一类事件只要加进
+  // 下面这张表，不必再改 prune/resetFeedback 之外的地方
+  const shortLived: { at: number }[][] = [flashes, hits, slains, bites, whiffs, tints, qinxins]
+  for (const list of shortLived) pruneExpired(list, t, FLASH_KEEP, (item) => item.at)
   pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
 }
 
