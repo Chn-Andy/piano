@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
 import type { DifficultyName } from './chart'
-import { BATTLEFIELD, COMBO_MULTIPLIER_STOPS, HORDE_PLAN } from './config'
+import {
+  BATTLEFIELD,
+  BASE_DAMAGE,
+  COMBO_MULTIPLIER_STOPS,
+  HORDE_PLAN,
+  JUDGMENT_WINDOWS,
+  PLAYER_MAX_HP,
+  SUSTAIN_STRIKE,
+  TIER_DAMAGE_FACTOR,
+} from './config'
 import {
   arrivalTimeAt,
   comboMultiplierFor,
@@ -10,6 +19,8 @@ import {
   focusedExpectedDamagePerNote,
   planMonsters,
 } from './combat'
+import type { MonsterPlan } from './combat'
+import type { SustainEvent } from './sustain'
 
 describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   it('无连击时倍率为 1（基线伤害）', () => {
@@ -157,12 +168,8 @@ describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
 
 /* ── 战斗结算：命中 → 剑气 → 伤害 → 血量（模拟器公共接口） ────────── */
 
-import { BASE_DAMAGE, BATTLEFIELD, TIER_DAMAGE_FACTOR } from './config'
-import type { MonsterPlan } from './combat'
-import type { StrikeEvent } from './simulator'
+import type { StrikeEvent, OutcomeEvent } from './simulator'
 import { Simulator } from './simulator'
-
-import type { OutcomeEvent } from './simulator'
 
 /** 从战斗事件流中筛出剑气（类型收窄辅助） */
 function strikesOf(events: ReturnType<Simulator['drainBattle']>): readonly StrikeEvent[] {
@@ -313,8 +320,6 @@ describe('剑气 AoE（ADR-0012：全屏纵深衰减，无指向决策）', () =
 
 /* ── 扑空（ADR-0011：miss 不再扣血，威胁完全来自怪物到位） ─────────── */
 
-import { JUDGMENT_WINDOWS, PLAYER_MAX_HP } from './config'
-
 describe('扑空（miss 只留可见反馈，不掉血）', () => {
   it('Miss 产生扑空战斗事件，玩家血量不动', () => {
     const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(100, 50)] })
@@ -355,18 +360,23 @@ describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', (
 
     sim.tick(21.0)
     expect(sim.playerHp).toBe(PLAYER_MAX_HP - BATTLEFIELD.BITE_DAMAGE)
+    const bite = sim.drainBattle().find((e) => e.type === 'bite')
+    expect(bite!.time, '首口 = 抵达 + 一个整间隔（到达 20 + BITE_INTERVAL）').toBeCloseTo(
+      20 + BITE_INTERVAL,
+      9,
+    )
   })
 
   it('咬线节奏确定且与 tick 粒度无关：一步跨多口补齐全部咬击', () => {
     const coarse = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
-    coarse.tick(24.5) // 21/22/23/24 共 4 口（边界含：第 5 口在 25，未到）
+    coarse.tick(24.5) // 21..24 共 4 口（边界含：第 5 口恰在一个 BITE_INTERVAL 后，未到）
 
     const fine = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
     fine.tick(22.0)
     fine.tick(23.5)
     fine.tick(24.5)
 
-    expect(coarse.playerHp).toBe(PLAYER_MAX_HP - 4 * BATTLEFIELD.BITE_DAMAGE)
+    expect(coarse.playerHp).toBe(PLAYER_MAX_HP - 4 * BATTLEFIELD.BITE_DAMAGE) // 每口一拍间隔 ×2
     expect(fine.playerHp).toBe(coarse.playerHp)
   })
 
@@ -426,10 +436,6 @@ describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', (
 })
 
 /* ── 余韵/终章升格：真实 AoE 结伤（ADR-0007 增补 + 工单 08） ───────── */
-
-import { SUSTAIN_STRIKE } from './config'
-import { focusedExpectedDamagePerNote } from './combat'
-import type { SustainEvent } from './sustain'
 
 /** 从战斗流筛出余韵事件 */
 function sustainsOf(events: ReturnType<Simulator['drainBattle']>): readonly SustainEvent[] {
@@ -782,7 +788,6 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工
     expect(sim.status).toBe('defeat')
     expect(outcomeOf(battle).reason).toBe('player-hp-empty')
     expect(battle.filter((e) => e.type === 'bite').length, '血空全靠咬').toBeGreaterThanOrEqual(10)
-    expect(battle.some((e) => e.type === 'counter')).toBe(false)
   })
 })
 
@@ -792,3 +797,41 @@ function drainedOf(sim: Simulator): ReturnType<Simulator['drainBattle']> {
   expect(events.length, 'drainBattle 只该在终局后调一次').toBeGreaterThan(0)
   return events
 }
+
+/* ── 推进模型（工单 08，ADR-0011）：纵深纯函数 ─────────────────────── */
+
+describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () => {
+  it('生成时刻纵深最大；随后线性递减；抵达琴阵（纵深 0）后停住', () => {
+    const spawnAt = 5
+    expect(depthAt(spawnAt, spawnAt)).toBe(BATTLEFIELD.SPAWN_DEPTH)
+    expect(depthAt(spawnAt, spawnAt - 1), '未生成的怪在深处待命').toBe(BATTLEFIELD.SPAWN_DEPTH)
+
+    const mid = depthAt(spawnAt, spawnAt + BATTLEFIELD.TRAVEL_SECONDS / 2)
+    expect(mid).toBeCloseTo(BATTLEFIELD.SPAWN_DEPTH / 2, 9)
+
+    const arrival = arrivalTimeAt(spawnAt)
+    expect(arrival).toBeCloseTo(spawnAt + BATTLEFIELD.TRAVEL_SECONDS, 9)
+    expect(depthAt(spawnAt, arrival)).toBe(0)
+    expect(depthAt(spawnAt, arrival + 100), '到线后不再越过琴阵').toBe(0)
+  })
+
+  it('纵深衰减：琴阵前全额，每级 ×DECAY_RATIO，级数封顶', () => {
+    const spawnAt = 0
+    expect(decayAt(spawnAt, BATTLEFIELD.TRAVEL_SECONDS), '已抵琴阵：全额承伤').toBe(1)
+
+    const oneLevel =
+      BATTLEFIELD.TRAVEL_SECONDS -
+      BATTLEFIELD.AOE_LEVEL_DEPTH / (BATTLEFIELD.SPAWN_DEPTH / BATTLEFIELD.TRAVEL_SECONDS)
+    expect(decayAt(spawnAt, oneLevel)).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO, 9)
+
+    const capped = decayAt(spawnAt, 0) // 纵深 SPAWN_DEPTH ≥ CAP×LEVEL_DEPTH → 封顶
+    expect(capped).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP, 9)
+
+    let previous = 0
+    for (let t = 0; t <= BATTLEFIELD.TRAVEL_SECONDS; t += 0.5) {
+      const d = decayAt(spawnAt, t)
+      expect(d, `t=${t} 衰减随推进单调不减`).toBeGreaterThanOrEqual(previous - 1e-12)
+      previous = d
+    }
+  })
+})

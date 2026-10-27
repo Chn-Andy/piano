@@ -1,7 +1,8 @@
 /**
  * Canvas 2D 渲染壳：只消费模拟器的公开状态，不含任何游戏逻辑。
  * 水墨纸面风格（ADR-0005）：
- * - 上半区：斗琴战场——墨妖程序绘制剪影、HP 条、命中反馈；重击/击杀的
+ * - 上半区：斗琴战场——墨妖成群自深处向琴阵推进（工单 08，纵深排布
+ *   近大远小、咬线突进、AoE 剑气扫场墨浪、扑空斜笔）；重击/击杀的
  *   受击顿帧（战场一瞬冻结，音符流绝不同冻）、墨主登场落位、墨主死亡
  *   大爆裂（工单 04）。ADR-0004：怪物凭余光可读（大血条、大状态变化）。
  * - 余韵/终章（工单 04，ADR-0007）：乐句换气口处，本句剑气自判定线升腾、
@@ -13,6 +14,8 @@
  */
 
 import type { Chart, ChartNote, Lane } from '../core/chart'
+import { depthAt } from '../core/combat'
+import { BATTLEFIELD } from '../core/config'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
 import type { SustainEvent } from '../core/sustain'
@@ -31,6 +34,18 @@ export interface HitFeedback {
   readonly monsterId: number | null
   /** 和弦重击（更大的反馈） */
   readonly chord: boolean
+}
+
+/** 最近一次咬线（ADR-0011）：怪物向琴阵突进的可见反馈 */
+export interface BiteFeedback {
+  readonly at: number
+  readonly monsterId: number
+}
+
+/** 最近一次扑空（ADR-0011）：Miss 的剑气劈进空处的可见反馈 */
+export interface WhiffFeedback {
+  readonly at: number
+  readonly lane: Lane
 }
 
 export interface RenderModel {
@@ -56,8 +71,10 @@ export interface RenderModel {
   readonly hits: readonly HitFeedback[]
   /** 最近被击杀的怪物（淡出演出） */
   readonly slains: readonly { at: number; monsterId: number }[]
-  /** 最近挨的反击（红晕反馈） */
-  readonly counters: readonly { at: number }[]
+  /** 最近挨的咬线（红晕 + 怪物突进反馈） */
+  readonly bites: readonly BiteFeedback[]
+  /** 最近一次扑空（判定线上的空劈斜笔） */
+  readonly whiffs: readonly WhiffFeedback[]
   /* ── 余韵（工单 04）：近期余韵事件（含终章），渲染纯函数式消费 ── */
   readonly sustains: readonly SustainEvent[]
 }
@@ -67,7 +84,13 @@ const VISIBLE_AHEAD = 2.4 // 更远时刻的音符不绘制（秒）
 const FLASH_LIFE = 0.7 // 判定闪示存续（秒）
 const HIT_PULSE = 0.25 // 命中反馈存续（秒）
 const SLAIN_FADE = 0.45 // 击杀淡出（秒）
-const COUNTER_FLASH = 0.35 // 挨打红晕（秒）
+const BITE_LIFE = 0.34 // 咬线突进与红晕（秒）
+const WHIFF_LIFE = 0.4 // 扑空斜笔（秒）
+const SWEEP_LIFE = 0.34 // AoE 剑气扫场纵深（秒）
+/** 纵深 → 战场纵向几何：琴阵线（怪物停驻处）与战场最深处（生成处） */
+const LINE_INSET = 46 // 琴阵线在下落区分界线之上的距离（px）
+const FAR_Y_FRAC = 0.16 // 战场最深处的高度（占屏比）
+const FAR_SCALE = 0.45 // 最深处怪物的尺寸比例（近大远小）
 
 /* ── 余韵与终章演出（工单 04；规模分档肉眼可辨由这些参数拉开差距） ── */
 
@@ -179,7 +202,7 @@ export class Renderer {
     const shake = this.finaleShake(m)
     ctx.save()
     if (shake !== null) ctx.translate(shake[0], shake[1])
-    this.drawBattle(m, W, H, zoneY)
+    this.drawBattle(m, geom, W, H, zoneY)
     this.drawSustain(m, W, H, judgeY)
     ctx.restore()
 
@@ -326,9 +349,15 @@ export class Renderer {
     })
   }
 
-  /** 上半区战场：墨妖剪影 + HP 条 + 命中/击杀/反击反馈 + 顿帧与登场/爆裂演出 */
+  /**
+   * 上半区战场（工单 08：墨潮纵深推进，ADR-0011/0012）：多怪按纵深排布
+   * （近大远小），琴阵为一条横贯键区的墨线；剑气命中即自琴阵向深处
+   * 扫出衰减墨浪（AoE 视觉），到线怪物咬线时向琴阵突进；击杀原地泼墨。
+   * 横向散布由 id 的确定性 hash 生成（仅视觉，与模拟器无关，ADR-0012）。
+   */
   private drawBattle(
     m: RenderModel,
+    geom: { lanes: readonly LaneGeom[]; fieldW: number; x0: number },
     W: number,
     H: number,
     zoneY: number,
@@ -343,11 +372,34 @@ export class Renderer {
     ctx.lineTo(W, zoneY)
     ctx.stroke()
 
-    const cy = H * 0.3
-    const baseR = Math.min(H * 0.1, W * 0.09, 96)
-    const spawned = m.monsters.filter((mo) => mo.spawnAt <= m.t)
-    const active = spawned.find((mo) => mo.hp > 0)
-    const waiting = spawned.filter((mo) => mo.hp > 0 && mo !== active).slice(0, 2)
+    const lineY = zoneY - LINE_INSET
+    const farY = H * FAR_Y_FRAC
+    const baseR = Math.min(H * 0.085, W * 0.075, 84)
+
+    // 琴阵（GLOSSARY）：怪物停驻并开始咬人的防线——主笔 + 淡晕
+    ctx.strokeStyle = 'rgba(55,50,42,0.07)'
+    ctx.lineWidth = 12
+    ctx.beginPath()
+    ctx.moveTo(geom.x0 - 12, lineY)
+    ctx.lineTo(geom.x0 + geom.fieldW + 12, lineY)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(55,50,42,0.4)'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(geom.x0 - 8, lineY)
+    ctx.lineTo(geom.x0 + geom.fieldW + 8, lineY)
+    ctx.stroke()
+
+    // 纵深 → 屏上位置：近（琴阵）大、远（深处）小；横向散布仅视觉
+    const place = (monster: MonsterView, at: number): { x: number; y: number; r: number } => {
+      const f = depthAt(monster.spawnAt, at) / BATTLEFIELD.SPAWN_DEPTH
+      const lateral = hash2(monster.id * 13 + 5, 91) * 2 - 1
+      return {
+        x: W / 2 + lateral * geom.fieldW * 0.36,
+        y: lineY - (lineY - farY) * f,
+        r: baseR * (1 - (1 - FAR_SCALE) * f),
+      }
+    }
 
     // 受击顿帧：重击/击杀后战场时间冻结一瞬（音符流绝不同冻，节奏优先）
     let tBattle = m.t
@@ -358,65 +410,102 @@ export class Renderer {
     for (const s of m.slains) {
       if (m.t - s.at >= 0 && m.t - s.at < HIT_STOP) tBattle = Math.min(tBattle, s.at)
     }
-    // 后排待战墨妖（小、淡）
-    waiting.forEach((mo, i) => {
-      const side = i === 0 ? -1 : 1
-      this.drawMonster(m, mo, W / 2 + side * W * 0.21, cy + baseR * 0.3, baseR * 0.5, 0.45, tBattle)
-    })
 
-    // 当前墨妖（主目标）；墨主刚入场时自上而下落位 + 墨晕登场
-    if (active !== undefined) {
-      const lord = active.kind === 'inkLord'
-      let dropY = cy
-      if (lord) {
-        const age = m.t - active.spawnAt
-        if (age >= 0 && age < LORD_ENTRANCE) {
-          const ease = 1 - Math.pow(1 - age / LORD_ENTRANCE, 3)
-          dropY = cy - (1 - ease) * 120
-          // 登场墨晕：从大而淡收拢成体
-          const gather = 1 - age / LORD_ENTRANCE
-          ctx.globalAlpha = 0.22 * gather
-          ctx.fillStyle = '#14110d'
-          this.inkBlob(W / 2, cy, baseR * (1.4 + gather * 1.6), 99, 0.85)
-          ctx.fill()
-          ctx.globalAlpha = 1
-        }
-      }
-      this.drawMonster(m, active, W / 2, dropY, baseR * (lord ? 1.3 : 1), 1, tBattle)
+    // AoE 剑气扫场（ADR-0012 视觉）：自琴阵向深处推进的衰减墨浪，
+    // 一击一道；和弦重击的浪更厚。纵深越大浪越淡——衰减的直读。
+    for (const h of m.hits) {
+      const age = m.t - h.at
+      if (age < 0 || age > SWEEP_LIFE) continue
+      const p = age / SWEEP_LIFE
+      const y = lineY - (lineY - farY) * p
+      const fade = (1 - p) ** 1.4
+      ctx.globalAlpha = 0.15 * fade * (h.chord ? 1.6 : 1)
+      ctx.fillStyle = DEEP_INK
+      ctx.beginPath()
+      ctx.ellipse(W / 2, y, geom.fieldW * 0.58, 10 + 20 * (1 - p) * (h.chord ? 1.5 : 1), 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 1
     }
 
-    // 近期击杀：放大淡出 + 下坠；小妖点墨、墨主死亡大爆裂
+    // 活着的怪：自深处向琴阵绘制（远的先画，近的盖在上面）
+    const alive = m.monsters
+      .filter((mo) => mo.spawnAt <= m.t && mo.hp > 0)
+      .map((mo) => ({ mo, pos: place(mo, tBattle) }))
+      .sort((a, b) => b.pos.y - a.pos.y)
+    for (const { mo, pos } of alive) {
+      // 咬线突进：向琴阵方向的一记前扑（sin 半周往复）
+      let lunge = 0
+      for (const b of m.bites) {
+        if (b.monsterId !== mo.id) continue
+        const age = m.t - b.at
+        if (age < 0 || age > BITE_LIFE) continue
+        lunge = Math.max(lunge, Math.sin(Math.PI * (age / BITE_LIFE)) * 24)
+      }
+      this.drawMonster(m, mo, pos.x, pos.y + lunge, pos.r, 1, tBattle)
+    }
+
+    // 墨主登场：自上而下落位 + 墨晕收拢（在它自己的纵深位上）
+    for (const { mo, pos } of alive) {
+      if (mo.kind !== 'inkLord') continue
+      const age = m.t - mo.spawnAt
+      if (age < 0 || age >= LORD_ENTRANCE) continue
+      const gather = 1 - age / LORD_ENTRANCE
+      ctx.globalAlpha = 0.22 * gather
+      ctx.fillStyle = '#14110d'
+      this.inkBlob(pos.x, pos.y, pos.r * (1.6 + gather * 2), 99, 0.85)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+
+    // 咬线红晕：琴阵线上被咬位置的朱砂一闪（眼皮底下的警报）
+    for (const b of m.bites) {
+      const age = m.t - b.at
+      if (age < 0 || age > BITE_LIFE) continue
+      const mo = m.monsters.find((x) => x.id === b.monsterId)
+      if (mo === undefined) continue
+      const pos = place(mo, m.t)
+      const decay = 1 - age / BITE_LIFE
+      ctx.globalAlpha = 0.5 * decay
+      ctx.strokeStyle = BLOOD
+      ctx.lineWidth = 5
+      ctx.beginPath()
+      ctx.moveTo(pos.x - 30 * decay, lineY)
+      ctx.lineTo(pos.x + 30 * decay, lineY)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+
+    // 近期击杀：原地放大淡出 + 下坠 + 泼墨；墨主死亡大爆裂
     for (const s of m.slains) {
       const age = m.t - s.at
       if (age < 0 || age > SLAIN_FADE) continue
       const mo = m.monsters.find((x) => x.id === s.monsterId)
       if (mo === undefined) continue
       const lord = mo.kind === 'inkLord'
+      const pos = place(mo, s.at)
       this.drawMonster(
         m,
         mo,
-        W / 2,
-        cy + age * 70,
-        baseR * (lord ? 1.3 : 1) * (1 + age * 1.6),
+        pos.x,
+        pos.y + age * 60,
+        pos.r * (1 + age * 1.6),
         1 - age / SLAIN_FADE,
         tBattle,
       )
-      // 墨点泼溅（墨点粒子成型；规模随怪物级别）
       const spray = lord ? 46 : 14
       const speed = lord ? 520 : 300
-      this.inkSpray(m.t, s.at, W / 2, cy, spray, speed, s.monsterId * 31 + 7, 0.9)
+      this.inkSpray(m.t, s.at, pos.x, pos.y, spray, speed, s.monsterId * 31 + 7, 0.9)
       if (lord) {
-        // 墨主爆裂：墨晕炸开 + 冲击环 + 纸色闪帧
         const p = Math.min(1, age / SLAIN_FADE)
         ctx.globalAlpha = (1 - p) ** 1.6 * 0.5
         ctx.fillStyle = '#14110d'
-        this.inkBlob(W / 2, cy, baseR * (1.5 + p * 3.2), s.monsterId * 17 + 3, 0.8)
+        this.inkBlob(pos.x, pos.y, pos.r * (1.8 + p * 3.6), s.monsterId * 17 + 3, 0.8)
         ctx.fill()
         ctx.globalAlpha = (1 - p) ** 1.4
         ctx.strokeStyle = '#14110d'
         ctx.lineWidth = 10 * (1 - p) + 1
         ctx.beginPath()
-        ctx.ellipse(W / 2, cy, baseR * (0.6 + p * 4), baseR * (0.6 + p * 4) * 0.72, 0, 0, Math.PI * 2)
+        ctx.ellipse(pos.x, pos.y, pos.r * (0.8 + p * 4), pos.r * (0.8 + p * 4) * 0.72, 0, 0, Math.PI * 2)
         ctx.stroke()
         ctx.globalAlpha = Math.max(0, 1 - age / 0.1) * 0.5
         ctx.fillStyle = PAPER
@@ -440,18 +529,19 @@ export class Renderer {
     const lord = monster.kind === 'inkLord'
     const t = tAnim ?? m.t
 
-    // 受击脉冲：缩放 + 纸色闪
+    // 受击脉冲（AoE：全场都挨，最前怪吃满、后排按衰减折扣）：缩放 + 纸色闪
     let punch = 0
     let flash = 0
     let heavy = false
     for (const hit of m.hits) {
-      if (hit.monsterId !== monster.id) continue
       const age = m.t - hit.at
       if (age < 0 || age > HIT_PULSE) continue
       const decay = 1 - age / HIT_PULSE
-      punch = Math.max(punch, (hit.chord ? 0.22 : 0.1) * decay)
-      flash = Math.max(flash, decay)
-      if (hit.chord) heavy = true
+      const isFront = hit.monsterId === monster.id
+      const share = isFront ? 1 : 0.45
+      punch = Math.max(punch, (hit.chord ? 0.22 : 0.1) * decay * share)
+      flash = Math.max(flash, decay * share)
+      if (isFront && hit.chord) heavy = true
     }
 
     const r = radius * (1 + punch)
@@ -508,7 +598,7 @@ export class Renderer {
     }
 
     // HP 条：怪物正下方，宽厚醒目（余光可读的主通道）
-    const barW = Math.max(r * 2.4, 150)
+    const barW = Math.max(r * 2.4, 64)
     const barH = 13
     const barY = cy + radius * 1.06
     ctx.globalAlpha = alpha
@@ -561,16 +651,33 @@ export class Renderer {
       ctx.fillRect(0, 0, W * hpFrac, 10)
     }
 
-    // 挨打反馈：判定区上缘泛红渐隐（眼皮底下的警报）
-    for (const c of m.counters) {
-      const age = m.t - c.at
-      if (age < 0 || age > COUNTER_FLASH) continue
-      const decay = 1 - age / COUNTER_FLASH
+    // 被咬反馈：判定区上缘泛红渐隐（眼皮底下的警报——血量只在被咬时下降）
+    for (const b of m.bites) {
+      const age = m.t - b.at
+      if (age < 0 || age > BITE_LIFE) continue
+      const decay = 1 - age / BITE_LIFE
       const grad = ctx.createLinearGradient(0, judgeY, 0, judgeY - 140)
       grad.addColorStop(0, `rgba(160,61,44,${0.4 * decay})`)
       grad.addColorStop(1, 'rgba(160,61,44,0)')
       ctx.fillStyle = grad
       ctx.fillRect(0, judgeY - 140, W, 140)
+    }
+
+    // 扑空斜笔（ADR-0011）：Miss 的剑气劈进空处——一道斜墨急扫即逝
+    for (const wf of m.whiffs) {
+      const age = m.t - wf.at
+      if (age < 0 || age > WHIFF_LIFE) continue
+      const p = age / WHIFF_LIFE
+      const lx = geom.lanes[wf.lane]!.cx
+      ctx.globalAlpha = (1 - p) ** 1.6
+      ctx.strokeStyle = 'rgba(55,50,42,0.5)'
+      ctx.lineWidth = 7 * (1 - p) + 1
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(lx - 26, judgeY - 18 - p * 26)
+      ctx.lineTo(lx + 20, judgeY - 52 - p * 26)
+      ctx.stroke()
+      ctx.globalAlpha = 1
     }
 
     // 判定闪示（沿用 01）
