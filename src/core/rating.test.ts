@@ -15,6 +15,7 @@ function summary(partial: Partial<BattleSummary>): BattleSummary {
     good: 0,
     miss: 0,
     damageDealt: 0,
+    qinxin: 0,
     ...partial,
   }
 }

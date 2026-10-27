@@ -36,6 +36,7 @@ import type {
   BiteFeedback,
   HitFeedback,
   JudgmentFlash,
+  QinxinFeedback,
   TintFeedback,
   WhiffFeedback,
 } from './render/renderer'
@@ -104,6 +105,9 @@ const debugView: {
   tintToxic: number
   tintBlast: number
   poisonTicks: number
+  /** 琴心蓄能进度与释放次数（工单 10 浏览器实测读数） */
+  qinxinGauge: number
+  qinxinReleases: number
 } = {
   phase: 'title',
   t: 0,
@@ -123,6 +127,8 @@ const debugView: {
   tintToxic: 0,
   tintBlast: 0,
   poisonTicks: 0,
+  qinxinGauge: 0,
+  qinxinReleases: 0,
 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
@@ -170,6 +176,7 @@ const slains: { at: number; monsterId: number }[] = []
 const bites: BiteFeedback[] = []
 const whiffs: WhiffFeedback[] = []
 const tints: TintFeedback[] = []
+const qinxins: QinxinFeedback[] = []
 const sustains: SustainEvent[] = []
 
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
@@ -431,7 +438,7 @@ function showSettlement(): void {
       <p>${song.title} · ${DIFFICULTY_LABELS[difficulty]} · ${won ? '墨主伏诛，全场清空' : '胜负未分，琴音再起'}</p>
       <div class="rating-big rating-${rating}">${rating}</div>
       ${settlement?.improved === true ? '<div class="new-record">新纪录</div>' : ''}
-      <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b></p>
+      <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次</p>
       <p>完美 ${summary.perfect} · 良好 ${summary.good} · 失误 ${summary.miss}</p>
       <div class="actions">
         <button id="btn-retry">再来一次（回车）</button>
@@ -472,6 +479,7 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   bites.length = 0
   whiffs.length = 0
   tints.length = 0
+  qinxins.length = 0
   sustains.length = 0
   held.clear()
   outcomeResult = null
@@ -567,6 +575,11 @@ function collectBattle(events: readonly BattleEvent[]): void {
       else if (e.kind === 'toxic') debugView.tintToxic += 1
       else debugView.tintBlast += 1
       engine.tintStrike(engine.now() + PLAY_EPSILON, e.kind)
+    } else if (e.type === 'qinxin') {
+      // 琴心通明（工单 10）：战场区墨爆 + 向上的拨弦声；不抢音符流
+      qinxins.push({ at: e.time, index: e.index, damage: e.damage, targetIds: e.targetIds })
+      debugView.qinxinReleases = e.index
+      engine.qinxinBurst(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'poison') {
       // 中毒跳伤：极轻的滴声（状态层，不抢注意力）
       debugView.poisonTicks += 1
@@ -734,6 +747,7 @@ function prune(t: number): void {
   pruneExpired(bites, t, FLASH_KEEP, (b) => b.at)
   pruneExpired(whiffs, t, FLASH_KEEP, (wf) => wf.at)
   pruneExpired(tints, t, FLASH_KEEP, (tf) => tf.at)
+  pruneExpired(qinxins, t, FLASH_KEEP, (q) => q.at)
   pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
 }
 
@@ -759,6 +773,8 @@ function drawBackdrop(): void {
     bites: [],
     whiffs: [],
     tints: [],
+    qinxinGauge: 0,
+    qinxins: [],
     sustains: [],
   })
 }
@@ -802,6 +818,8 @@ function frame(): void {
   debugView.miss = summaryNow.miss
   debugView.playerHp = sim.playerHp
   debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
+  debugView.qinxinGauge = Number(sim.qinxinGauge.toFixed(3))
+  debugView.qinxinReleases = sim.qinxinReleases
 
   renderer.draw({
     chart,
@@ -821,6 +839,8 @@ function frame(): void {
     bites,
     whiffs,
     tints,
+    qinxinGauge: sim.qinxinGauge,
+    qinxins,
     sustains,
   })
 }

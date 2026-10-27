@@ -8,6 +8,7 @@ import {
   HORDE_PLAN,
   JUDGMENT_WINDOWS,
   PLAYER_MAX_HP,
+  QINXIN,
   SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
   TINT_EFFECTS,
@@ -396,11 +397,12 @@ describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', (
   it('咬空血量 → 败局定格（player-hp-empty），多余的口不发', () => {
     const sim = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
 
-    sim.tick(35) // 21..30 共 10 口 = 100 → 恰空（咬空先于歌毕裁定）
+    const lethalBites = Math.ceil(PLAYER_MAX_HP / BATTLEFIELD.BITE_DAMAGE)
+    sim.tick(21 + lethalBites * BITE_INTERVAL + 0.5) // 恰好咬到血空（咬空先于歌毕裁定）
 
     const battle = sim.drainBattle()
     const bites = battle.filter((e) => e.type === 'bite')
-    expect(bites).toHaveLength(10)
+    expect(bites, '咬到血空即止，多余的口不发').toHaveLength(lethalBites)
     expect(sim.playerHp).toBe(0)
     expect(sim.status).toBe('defeat')
     const outcome = outcomeOf(battle)
@@ -789,7 +791,10 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工
     const battle = drainedOf(sim)
     expect(sim.status).toBe('defeat')
     expect(outcomeOf(battle).reason).toBe('player-hp-empty')
-    expect(battle.filter((e) => e.type === 'bite').length, '血空全靠咬').toBeGreaterThanOrEqual(10)
+    expect(
+      battle.filter((e) => e.type === 'bite').length,
+      '血空全靠咬（口数 = 血量上限 / 每口伤害）',
+    ).toBeGreaterThanOrEqual(Math.ceil(PLAYER_MAX_HP / BATTLEFIELD.BITE_DAMAGE))
   })
 })
 
@@ -947,18 +952,15 @@ describe('异色音符：三色效果（工单 09）', () => {
   })
 
   it('毒音：毒得死——跳伤归零即击杀入流，剩余跳数不再补', () => {
-    const hp = 30
+    const hp = 15
     const chart = createChart([
-      [1, 0],
-      [3, 1, undefined, 'toxic'],
-      [33, 2],
+      [1, 0, undefined, 'toxic'],
+      [33, 1],
     ])
     const sim = new Simulator(chart, { monsters: [atLine(hp)] })
     sim.tick(0.9)
-    sim.keyDown(0, 1.0) // 普通命中：30 → 20
-    sim.tick(2.9)
-    sim.keyDown(1, 3.0) // 毒音命中：20 → 10，同时中毒
-    sim.tick(9.0)
+    sim.keyDown(0, 1.0) // 毒音命中：15 → 5，同时中毒
+    sim.tick(6.0)
 
     const battle = sim.drainBattle()
     const slain = battle.filter((e) => e.type === 'slain')
@@ -1030,5 +1032,138 @@ describe('异色音符：三色效果（工单 09）', () => {
     expect(tintEvents, '两键和弦只触发一次寒音').toHaveLength(1)
     const view = sim.monstersView()[0]!
     expect(view.holdBack, '后延只加一层').toBeCloseTo(coldDelaySeconds(), 9)
+  })
+})
+/* ── 琴心（工单 10，GLOSSARY：琴心；ADR-0007 增补）──────────────────── */
+
+/**
+ * 琴心测试的谱面：count 颗音符以 step 秒等距排布（默认 0.1 秒 → 30 击约 3 秒），
+ * 整段是一句。等距密排是为了在**咬线开始前**攒满一炮——这些测试关心的是
+ * 蓄能与爆发，不该被守线压力搅局。
+ */
+function burstChart(count: number, step = 0.1, startAt = 2): ReturnType<typeof createChart> {
+  const times = Array.from({ length: count }, (_, i) => Math.round((startAt + i * step) * 1000) / 1000)
+  const pairs = times.map((time, i) => [time, i % 5] as const)
+  const end = times[times.length - 1]!
+  return createChart(pairs, {
+    phrases: [{ id: 0, start: times[0]!, end, sustainStart: end, sustainEnd: end + 0.6 }],
+  })
+}
+
+/** 依次命中前 count 击（同键轮回须先松开，避免长按去重） */
+function hitFirst(sim: Simulator, count: number, step = 0.1, startAt = 2): void {
+  for (let i = 0; i < count; i += 1) {
+    const time = Math.round((startAt + i * step) * 1000) / 1000
+    sim.keyDown(i % 5, time)
+    sim.keyUp(i % 5)
+  }
+}
+
+describe('琴心蓄能与琴心通明（工单 10）', () => {
+  it('充能速率：满 CHARGE_COMBOS 次命中恰好放一炮，少一击不放', () => {
+    const short = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [singleMonster(10_000)] })
+    hitFirst(short, QINXIN.CHARGE_COMBOS - 1)
+    expect(short.qinxinReleases, '差一击不放').toBe(0)
+    expect(short.qinxinGauge).toBeCloseTo((QINXIN.CHARGE_COMBOS - 1) / QINXIN.CHARGE_COMBOS, 9)
+
+    const full = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [singleMonster(10_000)] })
+    hitFirst(full, QINXIN.CHARGE_COMBOS)
+    expect(full.qinxinReleases, '满槽即放').toBe(1)
+    expect(full.qinxinGauge, '放完清零').toBe(0)
+    expect(full.summary().qinxin, '结算统计带上次数').toBe(1)
+  })
+
+  it('满槽即放：爆发时刻 = 填满它的那一击（不等 tick）', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [singleMonster(10_000)] })
+    hitFirst(sim, QINXIN.CHARGE_COMBOS)
+    const burst = sim.drainBattle().find((e) => e.type === 'qinxin')
+    expect(burst).toBeDefined()
+    expect(burst!.time).toBeCloseTo(2 + 0.1 * (QINXIN.CHARGE_COMBOS - 1), 6)
+  })
+
+  it('断连不清空：二十击 → 漏一音 → 再十击，攒下的那层还在', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS + 1), { monsters: [singleMonster(10_000)] })
+    hitFirst(sim, 20)
+    expect(sim.qinxinGauge).toBeCloseTo(20 / QINXIN.CHARGE_COMBOS, 9)
+
+    // 第 21 颗留给 Miss：推进时钟越过它的 Good 窗
+    const missAt = Math.round((2 + 0.1 * 20) * 1000) / 1000
+    sim.tick(missAt + JUDGMENT_WINDOWS.good + 0.001)
+    expect(sim.combo, '漏接断连').toBe(0)
+    expect(sim.qinxinGauge, '断连不清空已蓄之能').toBeCloseTo(20 / QINXIN.CHARGE_COMBOS, 9)
+
+    for (let i = 21; i <= QINXIN.CHARGE_COMBOS; i += 1) {
+      const time = Math.round((2 + 0.1 * i) * 1000) / 1000
+      sim.keyDown(i % 5, time)
+      sim.keyUp(i % 5)
+    }
+    expect(sim.qinxinReleases, '断连只推迟放炮，不吞掉它').toBe(1)
+  })
+
+  it('Miss 不充能：漏音既不涨槽也不掉槽', () => {
+    const sim = new Simulator(burstChart(5), { monsters: [singleMonster(10_000)] })
+    sim.keyDown(0, 2)
+    sim.keyUp(0)
+    const before = sim.qinxinGauge
+    sim.tick(10)
+    expect(sim.summary().miss).toBeGreaterThan(0)
+    expect(sim.qinxinGauge).toBeCloseTo(before, 9)
+  })
+
+  it('溢出不浪费：连击不断时长连击能连放两炮', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS * 2), { monsters: [singleMonster(10_000)] })
+    hitFirst(sim, QINXIN.CHARGE_COMBOS * 2)
+    expect(sim.qinxinReleases).toBe(2)
+    expect(sim.qinxinGauge).toBe(0)
+  })
+
+  it('琴心通明：全场无衰减——最前排与最深处的怪吃到同一发', () => {
+    const baseline = focusedExpectedDamagePerNote() * QINXIN.DAMAGE_NOTE_EQUIVALENT
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }, // 已抵线
+      { id: 1, kind: 'inkDemon', spawnAt: 2, hp: 10_000 }, // 随首音符入场（纵深一路封顶）
+    ]
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: plan })
+    hitFirst(sim, QINXIN.CHARGE_COMBOS - 1)
+    const before = sim.monstersView()
+    const hitTime = Math.round((2 + 0.1 * (QINXIN.CHARGE_COMBOS - 1)) * 1000) / 1000
+    sim.keyDown((QINXIN.CHARGE_COMBOS - 1) % 5, hitTime)
+    sim.keyUp((QINXIN.CHARGE_COMBOS - 1) % 5)
+    const after = sim.monstersView()
+
+    // 第 30 击的剑气按纵深衰减；爆发份额 = 总掉血 − 剑气份额，两排应相等
+    const strikeShare = (index: number): number =>
+      BASE_DAMAGE * comboMultiplierFor(QINXIN.CHARGE_COMBOS) *
+      decayAt(plan[index]!.spawnAt, hitTime, after[index]!.holdBack)
+    const burstShare = (index: number): number => before[index]!.hp - after[index]!.hp - strikeShare(index)
+    expect(burstShare(0), '前排吃满').toBeCloseTo(baseline, 6)
+    expect(burstShare(1), '深处也吃满（无衰减）').toBeCloseTo(baseline, 6)
+    expect(decayAt(plan[1]!.spawnAt, hitTime), '对照组：剑气在深处确实衰减').toBeLessThan(1)
+  })
+
+  it('与乐句余韵同刻：琴心先入流、两者独立结伤不合并', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [singleMonster(10_000)] })
+    hitFirst(sim, QINXIN.CHARGE_COMBOS) // 命中当刻放炮
+    const end = Math.round((2 + 0.1 * (QINXIN.CHARGE_COMBOS - 1)) * 1000) / 1000
+    sim.tick(end + JUDGMENT_WINDOWS.good + 0.05) // 句末收势
+
+    const battle = sim.drainBattle()
+    const burstIndex = battle.findIndex((e) => e.type === 'qinxin')
+    const sustainIndex = battle.findIndex((e) => e.type === 'sustain')
+    expect(burstIndex, '琴心在流里').toBeGreaterThanOrEqual(0)
+    expect(sustainIndex, '余韵在流里').toBeGreaterThanOrEqual(0)
+    expect(burstIndex, '同帧相遇时琴心先结算').toBeLessThan(sustainIndex)
+    const burst = battle[burstIndex]!
+    const sustain = battle[sustainIndex]!
+    if (burst.type === 'qinxin' && sustain.type === 'sustain') {
+      expect(burst.time, '各自绑各自的事件时刻').toBeLessThan(sustain.time)
+    }
+  })
+
+  it('空场放炮：事件照发、目标为空，不崩溃', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [] })
+    hitFirst(sim, QINXIN.CHARGE_COMBOS)
+    const burst = sim.drainBattle().find((e) => e.type === 'qinxin')
+    expect(burst).toMatchObject({ type: 'qinxin', targetIds: [] })
   })
 })

@@ -261,6 +261,59 @@ export class AudioEngine {
     osc.stop(when + 0.07)
   }
 
+  /**
+   * 琴心通明（工单 10）：连击蓄满的自动爆发。与余韵的「向下的墨浪」相反——
+   * 它是**向上收束再炸开**的一声：上升的呼啸 + 五声拨弦 + 低频底劲。
+   * 音量刻意低于余韵：它每 30 连击就来一次，是节奏的一部分，不是高潮。
+   */
+  qinxinBurst(when: number): void {
+    const ctx = this.context
+
+    // 上升的呼啸（与余韵的下扫成镜像）
+    const seconds = 0.3
+    const source = ctx.createBufferSource()
+    source.buffer = this.noiseBuffer(seconds, 4)
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.setValueAtTime(260, when)
+    filter.frequency.exponentialRampToValueAtTime(2600, when + seconds)
+    filter.Q.value = 0.8
+    const sweepGain = ctx.createGain()
+    sweepGain.gain.setValueAtTime(0.001, when)
+    sweepGain.gain.exponentialRampToValueAtTime(0.11, when + seconds * 0.8)
+    sweepGain.gain.exponentialRampToValueAtTime(0.001, when + seconds + 0.08)
+    source.connect(filter).connect(sweepGain).connect(this.sfxOut)
+    source.start(when)
+
+    // 五声拨弦：三颗泛音依次「铮」开（D 宫调域内的 587/880/1175Hz）
+    const plucks = [587.33, 880, 1174.66]
+    for (let index = 0; index < plucks.length; index += 1) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.value = plucks[index]!
+      const at = when + 0.28 + index * 0.045
+      gain.gain.setValueAtTime(0.001, at)
+      gain.gain.exponentialRampToValueAtTime(0.075, at + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, at + 0.36)
+      osc.connect(gain).connect(this.sfxOut)
+      osc.start(at)
+      osc.stop(at + 0.38)
+    }
+
+    // 低频底劲：一记短促的沉，把「炸开」落地
+    const low = ctx.createOscillator()
+    const lowGain = ctx.createGain()
+    low.type = 'sine'
+    low.frequency.setValueAtTime(120, when + 0.28)
+    low.frequency.exponentialRampToValueAtTime(46, when + 0.62)
+    lowGain.gain.setValueAtTime(0.001, when + 0.28)
+    lowGain.gain.exponentialRampToValueAtTime(0.2, when + 0.3)
+    lowGain.gain.exponentialRampToValueAtTime(0.001, when + 0.64)
+    low.connect(lowGain).connect(this.sfxOut)
+    low.start(when + 0.28)
+    low.stop(when + 0.66)
+  }
   /** 墨妖被击杀：墨点泼溅（带通白噪脉冲，Program synthesis，无素材）。 */
   monsterSlain(when: number): void {
     const ctx = this.context
