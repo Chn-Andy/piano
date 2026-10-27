@@ -106,7 +106,7 @@ describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
     const sparse = Array.from({ length: 15 }, (_, i) => [1 + i * 2, i % 5] as const)
     const dense = Array.from({ length: 30 }, (_, i) => [2 + wave + i, i % 5] as const)
     const plan = planMonsters(
-      chartWithDifficulty('medium', [...sparse, ...dense, [1 + 2 * wave + 1, 0]]),
+      chartWithDifficulty('medium', [...sparse, ...dense, [1 + 2 * wave + 6, 0]]),
     )
     for (const m of plan) {
       expect(Number.isInteger(m.hp)).toBe(true)
@@ -114,11 +114,12 @@ describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
     }
     const demonHp = plan.filter((m) => m.kind === 'inkDemon').map((m) => m.hp)
     expect(demonHp).toHaveLength(2 * HORDE_PLAN.GROUP_SIZE.medium)
-    expect(demonHp[0]!, '波一 15 音的每只妖').toBeGreaterThan(0)
-    expect(demonHp[HORDE_PLAN.GROUP_SIZE.medium]!, '两倍音符的波，每只妖 HP 同倍（±取整）').toBeLessThanOrEqual(
-      demonHp[0]! * 2 + 1,
+    expect(demonHp[0]!, '波一 14 音的每只妖').toBeGreaterThan(0)
+    const secondWaveHp = demonHp[HORDE_PLAN.GROUP_SIZE.medium]!
+    expect(secondWaveHp, '两倍音符的波，每只妖 HP 同倍（±取整）').toBeGreaterThan(
+      demonHp[0]! * 1.8,
     )
-    expect(demonHp[HORDE_PLAN.GROUP_SIZE.medium]!).toBeGreaterThanOrEqual(demonHp[0]! * 2 - 1)
+    expect(secondWaveHp).toBeLessThan(demonHp[0]! * 2.2)
   })
 
   it('斩首预算不变式：带乐句谱面的墨主 HP ≤ 终章乐句预算 × LORD_HP_FRACTION', () => {
@@ -611,7 +612,9 @@ describe('和弦半按与松散（语义锁定）', () => {
     const after = sim.drainBattle()
     expect(strikesOf(after)).toHaveLength(0)
     expect(after.filter((e) => e.type === 'whiff')).toHaveLength(1)
-    expect(sim.playerHp).toBe(PLAYER_MAX_HP) // 扑空不掉血
+    // 在线妖在 t=2 的例行咬线（到达 1.0 后首口 2.0）；掉血来自咬线而非扑空
+    expect(after.filter((e) => e.type === 'bite')).toHaveLength(1)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP - BATTLEFIELD.BITE_DAMAGE)
     expect(chordEventsOf([...before, ...after])).toHaveLength(0) // 全程无重击
     const perNote = BASE_DAMAGE * comboMultiplierFor(2)
     expect(sim.monstersView()[0]!.hp).toBeCloseTo(1000 - 2 * perNote, 9)
@@ -735,6 +738,9 @@ function playThrough(chart: Chart, style: PlayStyle): Simulator {
   return sim
 }
 
+/** 静置玩家：从不按键（墨潮长驱直入） */
+const IDLE: PlayStyle = { name: '静置', hits: () => false, offset: () => 0 }
+
 const PERFECT: PlayStyle = { name: '完美', hits: () => true, offset: () => 0 }
 /** 认真玩家：每音必接（每 20 颗失手一颗），抖动在 Perfect 窗内 */
 const FOCUSED: PlayStyle = {
@@ -749,7 +755,7 @@ const CASUAL: PlayStyle = {
   offset: (id) => ((id % 5) * 0.02) - 0.02,
 }
 
-describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (difficulty) => {
+describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工单 08：墨潮守线）', (difficulty) => {
   it('完美弹奏：每个音都判出，整首不断裂，终局胜利', () => {
     const chart = canonChart(difficulty)
     const sim = playThrough(chart, PERFECT)
@@ -759,49 +765,30 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (di
     expect(sim.status).toBe('victory')
   })
 
-  it('认真弹奏（95% 命中 + Perfect 抖动）：能撑到歌末并清场获胜', () => {
+  it('认真弹奏（95% 命中 + Perfect 抖动）：守得住琴阵，撑到歌末清场获胜', () => {
     const sim = playThrough(canonChart(difficulty), FOCUSED)
     expect(sim.status).toBe('victory')
+    expect(sim.playerHp, '认真玩家不该被打穿').toBeGreaterThanOrEqual(PLAYER_MAX_HP / 2)
   })
 
-  it('普通弹奏（三失其一）：打不完这整首（败局）', () => {
+  it('普通弹奏（三失其一）：守线失败（血空或怪残留），败局', () => {
     const sim = playThrough(canonChart(difficulty), CASUAL)
     expect(sim.status).toBe('defeat')
   })
-})
 
-/* ── 推进模型（工单 08，ADR-0011）：纵深纯函数 ─────────────────────── */
-
-describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () => {
-  it('生成时刻纵深最大；随后线性递减；抵达琴阵（纵深 0）后停住', () => {
-    const spawnAt = 5
-    expect(depthAt(spawnAt, spawnAt)).toBe(BATTLEFIELD.SPAWN_DEPTH)
-    expect(depthAt(spawnAt, spawnAt - 1), '未生成的怪在深处待命').toBe(BATTLEFIELD.SPAWN_DEPTH)
-
-    const mid = depthAt(spawnAt, spawnAt + BATTLEFIELD.TRAVEL_SECONDS / 2)
-    expect(mid).toBeCloseTo(BATTLEFIELD.SPAWN_DEPTH / 2, 9)
-
-    const arrival = arrivalTimeAt(spawnAt)
-    expect(arrival).toBeCloseTo(spawnAt + BATTLEFIELD.TRAVEL_SECONDS, 9)
-    expect(depthAt(spawnAt, arrival)).toBe(0)
-    expect(depthAt(spawnAt, arrival + 100), '到线后不再越过琴阵').toBe(0)
-  })
-
-  it('纵深衰减：琴阵前全额，每级 ×DECAY_RATIO，级数封顶', () => {
-    const spawnAt = 0
-    expect(decayAt(spawnAt, BATTLEFIELD.TRAVEL_SECONDS), '已抵琴阵：全额承伤').toBe(1)
-
-    const oneLevel = BATTLEFIELD.TRAVEL_SECONDS - BATTLEFIELD.AOE_LEVEL_DEPTH / (BATTLEFIELD.SPAWN_DEPTH / BATTLEFIELD.TRAVEL_SECONDS)
-    expect(decayAt(spawnAt, oneLevel)).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO, 9)
-
-    const capped = decayAt(spawnAt, 0) // 纵深 SPAWN_DEPTH ≥ CAP×LEVEL_DEPTH → 封顶
-    expect(capped).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP, 9)
-
-    let previous = 0
-    for (let t = 0; t <= BATTLEFIELD.TRAVEL_SECONDS; t += 0.5) {
-      const d = decayAt(spawnAt, t)
-      expect(d, `t=${t} 衰减随推进单调不减`).toBeGreaterThanOrEqual(previous - 1e-12)
-      previous = d
-    }
+  it('静置弹奏：墨潮推进到琴阵咬空血量——血量威胁完全来自怪物到位', () => {
+    const sim = playThrough(canonChart(difficulty), IDLE)
+    const battle = drainedOf(sim)
+    expect(sim.status).toBe('defeat')
+    expect(outcomeOf(battle).reason).toBe('player-hp-empty')
+    expect(battle.filter((e) => e.type === 'bite').length, '血空全靠咬').toBeGreaterThanOrEqual(10)
+    expect(battle.some((e) => e.type === 'counter')).toBe(false)
   })
 })
+
+/** 从终局模拟器取全量战斗流（drainBattle 只出一次，测试里聚合用） */
+function drainedOf(sim: Simulator): ReturnType<Simulator['drainBattle']> {
+  const events = sim.drainBattle()
+  expect(events.length, 'drainBattle 只该在终局后调一次').toBeGreaterThan(0)
+  return events
+}

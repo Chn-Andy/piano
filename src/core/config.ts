@@ -44,36 +44,36 @@ export const COMBO_MULTIPLIER_STOPS = [
  *
  * 记账单位不变：「认真玩家」每音符期望伤害（FOCUSED_PLAYER ≈ 8 点），
  * 波内音符数 × 它 = 该波的 HP 预算。定标目标（SPEC）：认真弹可杀于线前、
- * 随意弹守不住——按 ADR-0012 的前排承伤模型（最前妖吃全额）推导：
+ * 随意弹守不住——按 ADR-0012 的前排承伤模型推导：
  *
- * 1. 有效输出速率（命中 + 余韵 AoE，以基线伤害为单位）：认真玩家
- *    （95% 命中、Perfect 抖动）句句 grand，≈ 命中 0.95 ×(1 + grand 档
- *    结伤比 1.0) ≈ 1.9；普通玩家（三失其一、Good 居多、连击难破 10 档）
- *    句句 minor，≈ 0.7 ×(1 + minor 档结伤比 0.3) ≈ 0.9。
- * 2. 清波时间 = 波总预算 ÷ (有效输出 × 群吸收系数)，吸收系数 =
- *    Σ 0.6^级（错峰 5s ≈ 纵深 2.8 度 ≈ 1 级）：2 妖 ≈ 1.6、3 妖 ≈ 2.0、
- *    4 妖 ≈ 2.1（封顶后）。
- * 3. 前排单妖击杀时间 = DEMON_HP_FRACTION × 预算 ÷ 命中输出：认真玩家
- *    各难度 ≈ 10–15s < TRAVEL_SECONDS(18s)，杀于线前有 3–8s 余量；
- *    普通玩家同量 ≈ 20–30s > 18s——波末妖带血抵阵开始咬人（每口
- *    BATTLEFIELD.BITE_DAMAGE）。守线压力来自「下一只何时到线」，
- *    miss 的代价是它提前到来（ADR-0011 的因果结构）。
- * 4. 墨主 HP 挂在终章乐句预算上（末乐句音符 × 期望伤害 ×
- *    LORD_HP_FRACTION）：终章 grand 结伤 = 同预算 × grand 档结伤比 ×
- *    终章倍率 = 1.5 > 1.2 → 满血墨主可被终章斩首（构造性保证）。
- *    谱面无乐句则无终章，墨主退用波预算（LORD_WAVE_FALLBACK_FRACTION）。
- * （首版定标：三玩家模型性质测试钉住可胜可败；11 号票终定标。）
+ * 1. 有效输出（以基线伤害为单位）：衰减稀释后每个音符实际入账约 8 点
+ *    （前排吃满、后排只吃零头——但后排本来就轮不到先死）；句末余韵
+ *    全额泼场再叠加一笔（见 SUSTAIN_STRIKE，档位结伤比拉开玩家差距：
+ *    完美/认真句句 grand ≈ +1.0 句预算，普通句句 minor 只 +0.2）。
+ * 2. 清波单妖时间 = DEMON_HP_FRACTION × 波预算 ÷ 命中输出：认真玩家
+ *    各难度约 0.4 × 波宽 ÷ 0.9 ≈ 13s < TRAVEL_SECONDS(19s)，杀于线前
+ *    有 6s 余量；普通玩家（三失其一、Good 居多、连击难破 10 档）同量
+ *    翻倍以上——波末妖带血抵阵开始咬人（每口 BATTLEFIELD.BITE_DAMAGE），
+ *    逐波滚雪球至血空。守线压力来自「下一只何时到线」，miss 的代价是
+ *    它提前到来（ADR-0011 的因果结构）。
+ * 3. 墨主 HP 挂在终章乐句预算上（末乐句音符 × 期望伤害 ×
+ *    LORD_HP_FRACTION）：终章 grand 结伤 = 同预算 × 1.0 × 终章倍率
+ *    1.5 > 1.2 → 满血墨主可被终章斩首（构造性保证，且无视推进纵深）；
+ *    major 终章 0.75 < 1.2——斩首只属于 grand。
+ * 4. 数值由程序化网格搜索定标（9 谱面 × 三玩家模型）：完美/认真全谱面
+ *    可胜（完美至多挨 4 口，在最密的春江 hard），普通全谱面必败；
+ *    同曲重开一致。首版定标，11 号票终定标。
  */
 export const HORDE_PLAN = {
   /** 各难度波宽（秒）：生成节奏随难度——波越窄，增援越密 */
-  WAVE_SECONDS: { easy: 32, medium: 30, hard: 26 } satisfies Record<DifficultyName, number>,
+  WAVE_SECONDS: { easy: 30, medium: 28, hard: 24 } satisfies Record<DifficultyName, number>,
   /** 每波墨妖只数：难度越高群越大（末波墨主独行，不占此数） */
-  GROUP_SIZE: { easy: 2, medium: 3, hard: 4 } satisfies Record<DifficultyName, number>,
-  /** 同波妖的出场错峰（秒）：拉开纵深层级、错开咬线节奏 */
-  GROUP_STAGGER_SECONDS: 5,
+  GROUP_SIZE: { easy: 2, medium: 2, hard: 3 } satisfies Record<DifficultyName, number>,
+  /** 同波妖的出场错峰（秒）：约拉开 1 个衰减级，错开咬线节奏 */
+  GROUP_STAGGER_SECONDS: 9,
   /** 每只墨妖 HP = 波内音符数 × 期望伤害 × 此比例（群只数不改单只厚度） */
-  DEMON_HP_FRACTION: 0.55,
-  /** 墨主 HP = 终章乐句音符预算 × 此比例（斩首不变式的被减数，见上 4） */
+  DEMON_HP_FRACTION: 0.4,
+  /** 墨主 HP = 终章乐句音符预算 × 此比例（斩首不变式的被减数，见上 3） */
   LORD_HP_FRACTION: 1.2,
   /** 谱面无乐句时的墨主 HP 比例（×末波音符预算；无乐句即无终章） */
   LORD_WAVE_FALLBACK_FRACTION: 0.6,
@@ -105,13 +105,12 @@ export const BATTLEFIELD = {
   SPAWN_DEPTH: 10,
   /**
    * 全程推进耗时（秒）＝生成→抵琴阵：恒速 = SPAWN_DEPTH / TRAVEL_SECONDS
-   * ≈ 0.56 度/秒。定标（认真弹可杀于线前、随意弹守不住，见 HORDE_PLAN）：
-   * 认真玩家清完一波约需 0.35–0.45 × 波宽（见 HP 预算推导），留足
-   * 「杀于线前」的余量；普通玩家同波需 0.6–0.8 × 波宽，后段妖抵达
-   * 琴阵开始咬人——18 秒行程把这条分界线放在两个玩家模型的缝隙里。
+   * ≈ 0.53 度/秒。定标（认真弹可杀于线前、随意弹守不住，见 HORDE_PLAN）：
+   * 认真玩家单妖击杀 ≈ 13s，19 秒行程留 6s 余量；普通玩家单妖 ≥ 25s，
+   * 必然带血抵阵开始咬人。这条分界线放在两个玩家模型的缝隙里。
    * （首版定标；11 号票终定标。）
    */
-  TRAVEL_SECONDS: 18,
+  TRAVEL_SECONDS: 19,
   /** 抵达琴阵后每 ATTACK_BEATS 拍咬一口（首口在抵达后一个整间隔） */
   ATTACK_BEATS: 2,
   /**
@@ -175,18 +174,19 @@ export const SUSTAIN = {
 } as const
 
 /* ── 余韵/终章 AoE 结伤（工单 08：余韵从纯演出升格为真实伤害事件）──────
- * 伤害 = 句内音符数 × 期望伤害 × 档位结伤比（× 终章倍率）。以句内音符
- * 预算记账（同 HORDE_PLAN），弹得越好炸得越狠：
- * - minor 0.3：普通玩家的余韵是挠痒（约占其输出的三成）；
- * - major 0.65：认真以上的乐句给一半多的额外输出；
+ * 伤害 = 句内音符数 × 期望伤害 × 档位结伤比（× 终章倍率），全额无视
+ * 纵深（收势泼向整个战场）。以句内音符预算记账（同 HORDE_PLAN），
+ * 弹得越好炸得越狠——档位结伤比是三玩家模型的主要分离器：
+ * - minor 0.2：普通玩家的余韵是挠痒；
+ * - major 0.5：认真以上的乐句给半句额外火力；
  * - grand 1.0：近乎无瑕的乐句，剑气把整句火力再打一遍；
  * - FINALE_MULTIPLIER 1.5：终章 grand = 1.5 个句预算 > 墨主的
  *   HORDE_PLAN.LORD_HP_FRACTION(1.2) 个句预算 → 满血墨主可被斩首
- *   （构造性保证；major 终章 0.975 < 1.2，斩不下来——斩首只属于 grand）。
+ *   （构造性保证；major 终章 0.75 < 1.2，斩不下来——斩首只属于 grand）。
  */
 export const SUSTAIN_STRIKE = {
   /** 各档结伤比（× 句内音符预算） */
-  TIER_DAMAGE_FRACTION: { minor: 0.3, major: 0.65, grand: 1.0 },
+  TIER_DAMAGE_FRACTION: { minor: 0.2, major: 0.5, grand: 1.0 },
   /** 终章倍率（终章 = 加强版余韵，演出与结伤同升） */
   FINALE_MULTIPLIER: 1.5,
 } as const
