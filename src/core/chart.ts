@@ -9,6 +9,15 @@
 export type DifficultyName = 'easy' | 'medium' | 'hard'
 
 /**
+ * 异色音符的三种词缀（GLOSSARY：异色音符，工单 09）：
+ * - cold 寒音：全场击退并减速；
+ * - toxic 毒音：最前怪物中毒持续掉血；
+ * - blast 爆音：最前与次前怪物受重击。
+ * 词缀只加战场效果、不改判定（照常 Perfect/Good/Miss）。
+ */
+export type NoteTint = 'cold' | 'toxic' | 'blast'
+
+/**
  * 键位（Lane）：谱面音符在难度键位布局中的下标（自左至右的钢琴键序号）。
  * 工单 01 演示谱面为白键 0..6；黑键与扩域（中等 12 键、高级扩域）见 ADR-0006，
  * 各难度的完整布局由 ChartMeta.keys 声明。
@@ -27,6 +36,11 @@ export interface ChartNote {
    * 单一音符不带分组。同刻的多颗音符合为一组（和弦识别以时刻为准）。
    */
   readonly chordId?: number
+  /**
+   * 异色词缀（GLOSSARY：异色音符，工单 09）：命中时附加战场效果。
+   * 同一和弦的成员共享同一词缀（一次命中只结算一次效果）。
+   */
+  readonly tint?: NoteTint
 }
 
 /** 难度元数据：谱面自描述其键位范围与量化网格（SPEC-0001 谱面格式）。 */
@@ -71,8 +85,13 @@ export interface Chart {
 /** 谱面收尾余量：最后一个音符之后仍视为"演奏中"的时长。 */
 const TAIL_SECONDS = 2
 
-/** 手写/转换谱面的音符输入：[时刻, 键位, 和弦分组?] */
-export type ChartNoteInput = readonly [time: number, lane: Lane, chordId?: number]
+/** 手写/转换谱面的音符输入：[时刻, 键位, 和弦分组?, 词缀?] */
+export type ChartNoteInput = readonly [
+  time: number,
+  lane: Lane,
+  chordId?: number,
+  tint?: NoteTint,
+]
 
 /** 完整谱面选项：元数据与乐句（提供即校验）。 */
 export interface ChartOptions {
@@ -90,10 +109,15 @@ export function createChart(
   options?: ChartOptions,
 ): Chart {
   const sorted = [...pairs].sort((a, b) => a[0] - b[0])
-  const notes: ChartNote[] = sorted.map(([time, lane, chordId], id) =>
-    chordId === undefined ? { id, time, lane } : { id, time, lane, chordId },
-  )
+  const notes: ChartNote[] = sorted.map(([time, lane, chordId, tint], id) => ({
+    id,
+    time,
+    lane,
+    ...(chordId !== undefined ? { chordId } : {}),
+    ...(tint !== undefined ? { tint } : {}),
+  }))
   validateChords(notes)
+  validateTints(notes)
   const meta = options?.meta
   if (meta !== undefined) validateLanes(notes, meta)
   const phrases = options?.phrases
@@ -137,6 +161,25 @@ function validateChords(notes: readonly ChartNote[]): void {
     }
     if (group.some((n) => n.time !== group[0]!.time)) {
       throw new Error(`和弦 ${chordId} 的音符必须同刻`)
+    }
+  }
+}
+
+/**
+ * 异色词缀校验（工单 09）：同一和弦分组的成员必须共享同一词缀——
+ * 一次命中只结算一次效果，成员异色会让「哪颗音符触发」失去唯一答案。
+ */
+function validateTints(notes: readonly ChartNote[]): void {
+  const byChord = new Map<number, readonly ChartNote[]>()
+  for (const note of notes) {
+    if (note.chordId === undefined) continue
+    const group = byChord.get(note.chordId)
+    byChord.set(note.chordId, group === undefined ? [note] : [...group, note])
+  }
+  for (const [chordId, group] of byChord) {
+    const tints = new Set(group.map((n) => n.tint ?? null))
+    if (tints.size > 1) {
+      throw new Error(`和弦 ${chordId} 的成员词缀不一致：同组须共享同一异色词缀`)
     }
   }
 }

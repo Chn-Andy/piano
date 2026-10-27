@@ -33,29 +33,34 @@ export function advanceSpeed(): number {
   return BATTLEFIELD.SPAWN_DEPTH / BATTLEFIELD.TRAVEL_SECONDS
 }
 
-/** 抵达琴阵（纵深 0）的时刻：spawnAt + 全程耗时 */
-export function arrivalTimeAt(spawnAt: number): number {
-  return spawnAt + BATTLEFIELD.TRAVEL_SECONDS
+/**
+ * 抵达琴阵（纵深 0）的时刻：spawnAt + 全程耗时 + 后延。
+ * 后延（holdBack）来自寒音的击退/减速（工单 09，core/tints.ts 记账）：
+ * 它把整段行程整体推后，抵阵与咬线时刻随之后移。
+ */
+export function arrivalTimeAt(spawnAt: number, holdBack = 0): number {
+  return spawnAt + BATTLEFIELD.TRAVEL_SECONDS + holdBack
 }
 
 /**
  * t 时刻的纵深（离琴阵距离）：生成前在深处待命，恒速推进，抵阵停住。
- * 纯函数——推进不依赖 tick 粒度，任意时刻反解位置一致。
+ * 纯函数——推进不依赖 tick 粒度，任意时刻反解位置一致；后延把推进时钟
+ * 整体推后，因此击退在画面上表现为「一步退、再慢慢走到线」。
  */
-export function depthAt(spawnAt: number, t: number): number {
+export function depthAt(spawnAt: number, t: number, holdBack = 0): number {
   if (t <= spawnAt) return BATTLEFIELD.SPAWN_DEPTH
-  return Math.max(0, BATTLEFIELD.SPAWN_DEPTH - advanceSpeed() * (t - spawnAt))
+  return Math.max(0, BATTLEFIELD.SPAWN_DEPTH - advanceSpeed() * (t - spawnAt - holdBack))
 }
 
 /** 纵深 → 衰减级数（封顶）：离琴阵每 LEVEL_DEPTH 度深一级 */
-export function decayLevelAt(spawnAt: number, t: number): number {
-  const level = Math.floor(depthAt(spawnAt, t) / BATTLEFIELD.AOE_LEVEL_DEPTH)
+export function decayLevelAt(spawnAt: number, t: number, holdBack = 0): number {
+  const level = Math.floor(depthAt(spawnAt, t, holdBack) / BATTLEFIELD.AOE_LEVEL_DEPTH)
   return Math.min(BATTLEFIELD.AOE_LEVEL_CAP, level)
 }
 
 /** 剑气对纵深处怪物的伤害折扣：每级 ×AOE_DECAY_RATIO，封顶于 CAP 级 */
-export function decayAt(spawnAt: number, t: number): number {
-  return BATTLEFIELD.AOE_DECAY_RATIO ** decayLevelAt(spawnAt, t)
+export function decayAt(spawnAt: number, t: number, holdBack = 0): number {
+  return BATTLEFIELD.AOE_DECAY_RATIO ** decayLevelAt(spawnAt, t, holdBack)
 }
 
 /**

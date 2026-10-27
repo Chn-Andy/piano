@@ -68,13 +68,15 @@
       "id": 12,
       "time": 5.167,
       "lane": 2,
-      "chordId": 2
+      "chordId": 2,
+      "tint": "blast"
     },
     {
       "id": 13,
       "time": 5.167,
       "lane": 17,
-      "chordId": 2
+      "chordId": 2,
+      "tint": "blast"
     },
     {
       "id": 14,
@@ -199,7 +201,8 @@
     {
       "id": 36,
       "time": 12.667,
-      "lane": 5
+      "lane": 5,
+      "tint": "cold"
     },
     {
       "id": 37,
@@ -295,7 +298,8 @@
     {
       "id": 54,
       "time": 19.333,
-      "lane": 9
+      "lane": 9,
+      "tint": "toxic"
     },
     {
       "id": 55,
@@ -397,13 +401,15 @@
       "id": 73,
       "time": 26,
       "lane": 2,
-      "chordId": 14
+      "chordId": 14,
+      "tint": "cold"
     },
     {
       "id": 74,
       "time": 26,
       "lane": 14,
-      "chordId": 14
+      "chordId": 14,
+      "tint": "cold"
     },
     {
       "id": 75,
@@ -598,13 +604,15 @@
       "id": 108,
       "time": 34.75,
       "lane": 10,
-      "chordId": 25
+      "chordId": 25,
+      "tint": "toxic"
     },
     {
       "id": 109,
       "time": 34.75,
       "lane": 15,
-      "chordId": 25
+      "chordId": 25,
+      "tint": "toxic"
     },
     {
       "id": 110,
@@ -747,7 +755,8 @@
     {
       "id": 134,
       "time": 41,
-      "lane": 12
+      "lane": 12,
+      "tint": "blast"
     },
     {
       "id": 135,
@@ -838,7 +847,8 @@
     {
       "id": 151,
       "time": 47.042,
-      "lane": 8
+      "lane": 8,
+      "tint": "blast"
     },
     {
       "id": 152,
@@ -933,7 +943,8 @@
     {
       "id": 170,
       "time": 55.375,
-      "lane": 16
+      "lane": 16,
+      "tint": "toxic"
     },
     {
       "id": 171,
@@ -1033,7 +1044,8 @@
     {
       "id": 190,
       "time": 64.125,
-      "lane": 9
+      "lane": 9,
+      "tint": "blast"
     },
     {
       "id": 191,
@@ -1108,7 +1120,8 @@
     {
       "id": 205,
       "time": 70.375,
-      "lane": 9
+      "lane": 9,
+      "tint": "blast"
     },
     {
       "id": 206,
@@ -1178,7 +1191,8 @@
     {
       "id": 219,
       "time": 76.625,
-      "lane": 2
+      "lane": 2,
+      "tint": "blast"
     },
     {
       "id": 220,
@@ -1316,13 +1330,15 @@
       "id": 244,
       "time": 84.125,
       "lane": 2,
-      "chordId": 41
+      "chordId": 41,
+      "tint": "toxic"
     },
     {
       "id": 245,
       "time": 84.125,
       "lane": 8,
-      "chordId": 41
+      "chordId": 41,
+      "tint": "toxic"
     },
     {
       "id": 246,
@@ -1433,7 +1449,8 @@
     {
       "id": 265,
       "time": 90.375,
-      "lane": 2
+      "lane": 2,
+      "tint": "toxic"
     },
     {
       "id": 266,
@@ -1580,7 +1597,8 @@
     {
       "id": 292,
       "time": 100.167,
-      "lane": 14
+      "lane": 14,
+      "tint": "cold"
     },
     {
       "id": 293,
@@ -1720,13 +1738,15 @@
       "id": 317,
       "time": 107.25,
       "lane": 9,
-      "chordId": 56
+      "chordId": 56,
+      "tint": "blast"
     },
     {
       "id": 318,
       "time": 107.25,
       "lane": 16,
-      "chordId": 56
+      "chordId": 56,
+      "tint": "blast"
     },
     {
       "id": 319,
@@ -1856,7 +1876,8 @@
     {
       "id": 342,
       "time": 115.167,
-      "lane": 5
+      "lane": 5,
+      "tint": "cold"
     },
     {
       "id": 343,
@@ -1947,7 +1968,8 @@
     {
       "id": 359,
       "time": 121.417,
-      "lane": 9
+      "lane": 9,
+      "tint": "toxic"
     },
     {
       "id": 360,
@@ -2043,7 +2065,8 @@
     {
       "id": 377,
       "time": 127.667,
-      "lane": 9
+      "lane": 9,
+      "tint": "blast"
     },
     {
       "id": 378,

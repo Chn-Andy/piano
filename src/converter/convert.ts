@@ -6,8 +6,10 @@
  */
 
 import { createChart } from '../core/chart'
-import type { Chart, DifficultyName, Phrase } from '../core/chart'
+import type { Chart, DifficultyName, NoteTint, Phrase } from '../core/chart'
+import { TINT_PLAN } from '../core/config'
 import { pitchClassOf } from '../core/pitch'
+import { pickTint } from '../core/tints'
 import type { SourceKey, SourceSong } from './midiSource'
 import {
   CHORD_SOURCE_WINDOW,
@@ -170,13 +172,15 @@ export function convertChart(
   // 乐句切分（休止检测 + 超长强制换气）+ 余韵窗口雕刻
   const { phrases, kept } = splitPhrases(events, beat)
 
-  // 契约装配（createChart 校验全部不变式）
+  // 契约装配（createChart 校验全部不变式）；异色词缀在装配前按事件确定性编排
+  const tints = planTints(kept, info.id)
   let chordSeq = 0
-  const pairs: [number, number, number | undefined][] = []
-  for (const event of kept) {
+  const pairs: [number, number, number | undefined, NoteTint | undefined][] = []
+  kept.forEach((event, index) => {
     const chordId = event.length >= 2 ? chordSeq++ : undefined
-    for (const note of event) pairs.push([note.time, note.lane, chordId])
-  }
+    const tint = tints[index]
+    for (const note of event) pairs.push([note.time, note.lane, chordId, tint])
+  })
   return createChart(pairs, {
     meta: {
       song: info.id,
@@ -187,6 +191,66 @@ export function convertChart(
     },
     phrases,
   })
+}
+
+/* ── 异色词缀编排（工单 09，GLOSSARY：异色音符）────────────────────────
+ * 确定性：同一曲目 + 同一难度 → 同一串词缀（同曲重开布局一致、可测试）。
+ * 抽签用整数哈希而非 Math.random：产物是提交进仓库的 JSON，跨机器重跑
+ * 必须逐字节一致（Math.sin 一类浮点哈希在引擎间不保证位级一致）。
+ */
+
+/** FNV-1a 字符串哈希：曲目 id 作为抽签种子（同曲恒定，异曲互不相同） */
+function songSeed(songId: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < songId.length; i += 1) {
+    hash ^= songId.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+/** 整数散列（xorshift-multiply 混合）：输出 [0,1) 的确定性伪随机数 */
+function roll(seed: number, index: number, salt: number): number {
+  let x = seed ^ Math.imul(index + 1, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca6b)
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d)
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b)
+  x ^= x >>> 16
+  return (x >>> 0) / 0x100000000
+}
+
+/**
+ * 编排词缀（事件 = 同刻音符组）：按「音符数 × 频率」定颗数，再沿时间轴
+ * **均布 + 哈希抖动**落点——均布避免扎堆与长空白（随机抽签在稀疏谱面上
+ * 会连续几颗都不中，频率漂到 2–4%），抖动让每首曲子的落点各不相同。
+ * 最小间隔是硬约束：落点太近就顺延到下一颗满足间隔的事件。
+ * 整组共享同一词缀（createChart 校验和弦成员一致）。
+ */
+function planTints(events: readonly Event[], songId: string): (NoteTint | undefined)[] {
+  const seed = songSeed(songId)
+  // 计数以「事件」（同刻音符组）为单位：一件词缀一次结算，和弦成员共享它
+  const count = Math.round(events.length * TINT_PLAN.FREQUENCY)
+  const tints = new Array<NoteTint | undefined>(events.length).fill(undefined)
+  if (count === 0 || events.length === 0) return tints
+
+  const step = events.length / count
+  let nextEarliest = 0
+  let lastTintAt = Number.NEGATIVE_INFINITY
+  for (let k = 0; k < count; k += 1) {
+    // 均布落点 ± 不到半步的抖动（同曲恒定；抖动不让落点越序）
+    const jitter = (roll(seed, k, 3) - 0.5) * step * 0.6
+    let index = Math.min(events.length - 1, Math.max(nextEarliest, Math.round((k + 0.5) * step + jitter)))
+    // 最小间隔硬约束：顺延到时间上够远的事件（顺延到头则这一颗放弃）
+    while (index < events.length - 1 && events[index]![0]!.time - lastTintAt < TINT_PLAN.MIN_GAP_SECONDS - EPS) {
+      index += 1
+    }
+    if (events[index]![0]!.time - lastTintAt < TINT_PLAN.MIN_GAP_SECONDS - EPS) break
+    tints[index] = pickTint(roll(seed, k, 2))
+    lastTintAt = events[index]![0]!.time
+    nextEarliest = index + 1
+  }
+  return tints
 }
 
 /** 一次转出三难度谱面 */

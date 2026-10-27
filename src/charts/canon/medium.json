@@ -23,7 +23,8 @@
     {
       "id": 4,
       "time": 9,
-      "lane": 7
+      "lane": 7,
+      "tint": "toxic"
     },
     {
       "id": 5,
@@ -123,7 +124,8 @@
     {
       "id": 24,
       "time": 48,
-      "lane": 1
+      "lane": 1,
+      "tint": "blast"
     },
     {
       "id": 25,
@@ -208,7 +210,8 @@
     {
       "id": 41,
       "time": 65,
-      "lane": 2
+      "lane": 2,
+      "tint": "cold"
     },
     {
       "id": 42,
@@ -308,7 +311,8 @@
     {
       "id": 61,
       "time": 100,
-      "lane": 7
+      "lane": 7,
+      "tint": "cold"
     },
     {
       "id": 62,
@@ -363,7 +367,8 @@
     {
       "id": 72,
       "time": 117,
-      "lane": 9
+      "lane": 9,
+      "tint": "cold"
     },
     {
       "id": 73,
@@ -458,7 +463,8 @@
     {
       "id": 91,
       "time": 148,
-      "lane": 11
+      "lane": 11,
+      "tint": "toxic"
     },
     {
       "id": 92,
@@ -538,7 +544,8 @@
     {
       "id": 107,
       "time": 166,
-      "lane": 1
+      "lane": 1,
+      "tint": "cold"
     },
     {
       "id": 108,

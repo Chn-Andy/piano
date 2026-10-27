@@ -13,12 +13,19 @@
  * 其余状态经 monstersView() / playerHp / summary() 查询。
  */
 
-import type { Chart, ChartNote, Lane, Phrase } from './chart'
+import type { Chart, ChartNote, Lane, NoteTint, Phrase } from './chart'
 import { arrivalTimeAt, biteInterval, comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
 import { focusedExpectedDamagePerNote } from './combat'
 import { phrasePerformanceScore, sustainTierFor } from './sustain'
 import type { PhrasePerformance, SustainEvent } from './sustain'
+import {
+  applyColdDelay,
+  blastDamage,
+  poisonTickCount,
+  poisonTickDamage,
+  poisonTickTime,
+} from './tints'
 import {
   BASE_DAMAGE,
   BATTLEFIELD,
@@ -28,6 +35,7 @@ import {
   PLAYER_MAX_HP,
   SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
+  TINT_EFFECTS,
 } from './config'
 
 /** 三级判定（GLOSSARY：判定） */
@@ -103,6 +111,27 @@ export interface ChordEvent {
   readonly size: number
 }
 
+/** 异色词缀触发（工单 09，GLOSSARY：异色音符）：一次命中附带的战场效果。
+ * targetIds 是效果实际落到的怪物（寒音=全场、毒音=最前、爆音=前二）；
+ * 空场时为空数组——效果扑空，但事件照发（判定与连击不受影响）。 */
+export interface TintEvent {
+  readonly type: 'tint'
+  readonly time: number
+  readonly noteId: number
+  readonly kind: NoteTint
+  readonly targetIds: readonly number[]
+}
+
+/** 毒音跳伤（工单 09）：状态伤害，每拍一跳、按目标最大生命比例，无视纵深衰减 */
+export interface PoisonEvent {
+  readonly type: 'poison'
+  readonly time: number
+  readonly monsterId: number
+  readonly damage: number
+  /** 跳伤后的怪物 HP */
+  readonly hpAfter: number
+}
+
 /** 胜负面：胜 = 歌毕且场上怪清完；败 = 玩家血空，或歌毕仍有怪存活 */
 export interface OutcomeEvent {
   readonly type: 'outcome'
@@ -117,6 +146,8 @@ export type BattleEvent =
   | WhiffEvent
   | BiteEvent
   | ChordEvent
+  | TintEvent
+  | PoisonEvent
   | SustainEvent
   | OutcomeEvent
 
@@ -160,6 +191,15 @@ export interface MonsterView {
   readonly spawnAt: number
   readonly hp: number
   readonly maxHp: number
+  /**
+   * 寒音累积的行程后延（秒，工单 09）：纵深与抵阵时刻都要按它反解
+   * （combat.depthAt(spawnAt, t, holdBack) / arrivalTimeAt(spawnAt, holdBack)）。
+   */
+  readonly holdBack: number
+  /** 减速状态的可见截止时刻（谱面时间轴）；null = 未减速。机制已折进 holdBack */
+  readonly slowedUntil: number | null
+  /** 中毒状态的可见截止时刻；null = 未中毒 */
+  readonly poisonUntil: number | null
 }
 
 /** 构造选项：出场计划默认由谱面推导（combat.planMonsters），可注入定制 */
@@ -172,6 +212,12 @@ interface MonsterState {
   hp: number
   /** 已发出的咬击口数（咬击时刻是排定的，与 tick 粒度无关） */
   bitesEmitted: number
+  /** 寒音累积的行程后延（秒）：抵阵/咬线/纵深全部按它推后 */
+  holdBack: number
+  /** 减速状态的可见截止时刻（只为渲染可读；机制已折进 holdBack） */
+  slowedUntil: number
+  /** 中毒状态（工单 09）：中毒时刻与已发出的跳数；null = 未中毒 */
+  poison: { readonly at: number; ticksEmitted: number } | null
 }
 
 /** 和弦结算跟踪：成员逐一命中，齐则重击、缺则作废 */
@@ -227,7 +273,14 @@ export class Simulator {
     this.phraseRanges = chart.phrases === undefined ? undefined : phraseNoteRanges(chart)
     this.noteTiers = new Array<JudgmentTier | undefined>(chart.notes.length).fill(undefined)
     const plan = options?.monsters ?? planMonsters(chart)
-    this.monsters = plan.map((p) => ({ plan: p, hp: p.hp, bitesEmitted: 0 }))
+    this.monsters = plan.map((p) => ({
+      plan: p,
+      hp: p.hp,
+      bitesEmitted: 0,
+      holdBack: 0,
+      slowedUntil: 0,
+      poison: null,
+    }))
     for (const note of this.notes) {
       if (note.chordId === undefined) continue
       let tracking = this.chords.get(note.chordId)
@@ -278,6 +331,9 @@ export class Simulator {
       spawnAt: m.plan.spawnAt,
       hp: m.hp,
       maxHp: m.plan.hp,
+      holdBack: m.holdBack,
+      slowedUntil: m.slowedUntil > 0 ? m.slowedUntil : null,
+      poisonUntil: m.poison === null ? null : m.poison.at + TINT_EFFECTS.toxic.POISON_SECONDS,
     }))
   }
 
@@ -375,6 +431,8 @@ export class Simulator {
     }
     this.processBites(time)
     if (this.battleStatus !== 'fighting') return events // 咬空即定格
+    this.processPoison(time)
+    if (this.battleStatus !== 'fighting') return events
     this.triggerSustains(time)
     if (time >= this.duration && this.battleStatus === 'fighting') {
       // 歌毕：场上怪清完 → 胜；仍有活怪 → 败（此后再无音符可清场）
@@ -393,7 +451,8 @@ export class Simulator {
     const horizon = Math.min(time, this.duration)
     for (const monster of this.monsters) {
       if (monster.hp <= 0) continue
-      const arrival = arrivalTimeAt(monster.plan.spawnAt)
+      // 寒音的后延把抵阵与整条咬击节奏一起推后（工单 09）
+      const arrival = arrivalTimeAt(monster.plan.spawnAt, monster.holdBack)
       const due = Math.floor((horizon - arrival) / biteInterval())
       while (monster.bitesEmitted < due && this.battleStatus === 'fighting') {
         monster.bitesEmitted += 1
@@ -420,23 +479,102 @@ export class Simulator {
   }
 
   /**
-   * 最前怪物：纵深最小（离琴阵最近）；同纵深取先入场者。只作战斗事件
-   * 的指向性读数（ADR-0012：伤害本身无指向，全场按纵深衰减分摊）。
+   * 最前的一批怪物：按纵深（离琴阵距离）升序，同纵深取先入场者。只作战斗
+   * 事件的指向性读数（ADR-0012：剑气伤害本身无指向，全场按纵深衰减分摊）；
+   * 异色音符的毒音/爆音按此序取目标（工单 09）。
    */
+  private frontMonsters(time: number, count: number): MonsterState[] {
+    const ranked = this.spawnedAlive(time).sort((a, b) => {
+      const delta =
+        depthAt(a.plan.spawnAt, time, a.holdBack) - depthAt(b.plan.spawnAt, time, b.holdBack)
+      return delta !== 0 ? delta : a.plan.id - b.plan.id
+    })
+    return ranked.slice(0, count)
+  }
+
+  /** 最前怪物（无怪时 null） */
   private frontMonster(time: number): MonsterState | null {
-    let front: MonsterState | null = null
-    for (const monster of this.spawnedAlive(time)) {
-      if (front === null) {
-        front = monster
-        continue
+    return this.frontMonsters(time, 1)[0] ?? null
+  }
+
+  /**
+   * 异色词缀的战场效果（工单 09，GLOSSARY：异色音符）：命中照常结伤之后结算。
+   * 效果一律无视剑气纵深衰减——它们不是剑气：寒音是控场、毒音是状态、
+   * 爆音是按目标身板的重击。只作用于已入场的活怪；空场即扑空（事件照发，
+   * 判定与连击不受影响）。
+   */
+  private applyTint(note: ChartNote, kind: NoteTint, time: number): void {
+    const alive = this.spawnedAlive(time)
+    if (kind === 'cold') {
+      for (const monster of alive) {
+        monster.holdBack = applyColdDelay(monster.holdBack)
+        monster.slowedUntil = time + TINT_EFFECTS.cold.SLOW_SECONDS
       }
-      const frontDepth = depthAt(front.plan.spawnAt, time)
-      const depth = depthAt(monster.plan.spawnAt, time)
-      if (depth < frontDepth || (depth === frontDepth && monster.plan.id < front.plan.id)) {
-        front = monster
-      }
+      this.battle.push({
+        type: 'tint',
+        time,
+        noteId: note.id,
+        kind,
+        targetIds: alive.map((m) => m.plan.id),
+      })
+      return
     }
-    return front
+    if (kind === 'toxic') {
+      const front = this.frontMonster(time)
+      if (front !== null) {
+        // 覆盖式刷新：新的一口以本次命中为起点重新计跳（不叠层，避免无限毒）
+        front.poison = { at: time, ticksEmitted: 0 }
+      }
+      this.battle.push({
+        type: 'tint',
+        time,
+        noteId: note.id,
+        kind,
+        targetIds: front === null ? [] : [front.plan.id],
+      })
+      return
+    }
+    // 爆音：最前与次前各挨一记按身板的重击
+    const targets = this.frontMonsters(time, 2)
+    for (const monster of targets) {
+      this.dealDamage(monster, blastDamage(monster.plan.hp), time)
+    }
+    this.battle.push({
+      type: 'tint',
+      time,
+      noteId: note.id,
+      kind,
+      targetIds: targets.map((m) => m.plan.id),
+    })
+  }
+
+  /**
+   * 中毒跳伤（工单 09）：每拍一跳、按目标最大生命比例；跳数由持续时间常数
+   * 决定。跳时刻是中毒起点 + k × 拍长——与 tick 粒度无关：一步跨多拍则
+   * 按序补齐。目标已死则该口毒随之结束（剩余跳数不再补）。
+   */
+  private processPoison(time: number): void {
+    const horizon = Math.min(time, this.duration)
+    const total = poisonTickCount()
+    for (const monster of this.monsters) {
+      const poison = monster.poison
+      if (poison === null || monster.hp <= 0) continue
+      const due = Math.min(total, Math.floor((horizon - poison.at) / BATTLEFIELD.BEAT_SECONDS))
+      while (poison.ticksEmitted < due && monster.hp > 0) {
+        poison.ticksEmitted += 1
+        const at = poisonTickTime(poison.at, poison.ticksEmitted)
+        const damage = poisonTickDamage(monster.plan.hp)
+        this.battle.push({
+          type: 'poison',
+          time: at,
+          monsterId: monster.plan.id,
+          damage,
+          hpAfter: Math.max(0, monster.hp - damage),
+        })
+        this.dealDamage(monster, damage, at)
+      }
+      if (monster.hp <= 0) monster.poison = null
+    }
   }
 
   /**
@@ -445,7 +583,7 @@ export class Simulator {
    */
   private sweep(damage: number, time: number): void {
     for (const monster of this.spawnedAlive(time)) {
-      this.dealDamage(monster, damage * decayAt(monster.plan.spawnAt, time), time)
+      this.dealDamage(monster, damage * decayAt(monster.plan.spawnAt, time, monster.holdBack), time)
     }
   }
 
@@ -566,6 +704,7 @@ export class Simulator {
       comboMultiplier: multiplier,
     })
     this.sweep(damage, time)
+    if (note.tint !== undefined) this.applyTint(note, note.tint, time)
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
   }
 

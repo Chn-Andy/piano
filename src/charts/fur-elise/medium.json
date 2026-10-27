@@ -60,7 +60,8 @@
     {
       "id": 11,
       "time": 9.333,
-      "lane": 4
+      "lane": 4,
+      "tint": "blast"
     },
     {
       "id": 12,
@@ -167,7 +168,8 @@
     {
       "id": 32,
       "time": 26,
-      "lane": 0
+      "lane": 0,
+      "tint": "cold"
     },
     {
       "id": 33,
@@ -272,7 +274,8 @@
     {
       "id": 51,
       "time": 37.667,
-      "lane": 0
+      "lane": 0,
+      "tint": "toxic"
     },
     {
       "id": 52,
@@ -383,7 +386,8 @@
     {
       "id": 72,
       "time": 53.083,
-      "lane": 8
+      "lane": 8,
+      "tint": "cold"
     },
     {
       "id": 73,
@@ -509,7 +513,8 @@
     {
       "id": 96,
       "time": 70.583,
-      "lane": 8
+      "lane": 8,
+      "tint": "toxic"
     },
     {
       "id": 97,
@@ -608,13 +613,15 @@
       "id": 114,
       "time": 82.25,
       "lane": 2,
-      "chordId": 17
+      "chordId": 17,
+      "tint": "blast"
     },
     {
       "id": 115,
       "time": 82.25,
       "lane": 5,
-      "chordId": 17
+      "chordId": 17,
+      "tint": "blast"
     },
     {
       "id": 116,
@@ -747,7 +754,8 @@
     {
       "id": 138,
       "time": 93.917,
-      "lane": 10
+      "lane": 10,
+      "tint": "blast"
     },
     {
       "id": 139,
@@ -875,7 +883,8 @@
     {
       "id": 162,
       "time": 111.833,
-      "lane": 4
+      "lane": 4,
+      "tint": "toxic"
     },
     {
       "id": 163,
@@ -982,7 +991,8 @@
     {
       "id": 183,
       "time": 128.5,
-      "lane": 0
+      "lane": 0,
+      "tint": "blast"
     },
     {
       "id": 184,

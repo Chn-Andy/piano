@@ -48,7 +48,8 @@
     {
       "id": 9,
       "time": 16,
-      "lane": 1
+      "lane": 1,
+      "tint": "blast"
     },
     {
       "id": 10,
@@ -138,7 +139,8 @@
     {
       "id": 27,
       "time": 46,
-      "lane": 2
+      "lane": 2,
+      "tint": "cold"
     },
     {
       "id": 28,
@@ -208,7 +210,8 @@
     {
       "id": 41,
       "time": 69.333,
-      "lane": 5
+      "lane": 5,
+      "tint": "toxic"
     },
     {
       "id": 42,
@@ -288,7 +291,8 @@
     {
       "id": 57,
       "time": 96,
-      "lane": 5
+      "lane": 5,
+      "tint": "cold"
     },
     {
       "id": 58,
@@ -383,7 +387,8 @@
     {
       "id": 76,
       "time": 127.667,
-      "lane": 2
+      "lane": 2,
+      "tint": "toxic"
     },
     {
       "id": 77,
