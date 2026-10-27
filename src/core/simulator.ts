@@ -14,12 +14,13 @@
  */
 
 import type { Chart, ChartNote, Lane, Phrase } from './chart'
-import { comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
+import { arrivalTimeAt, biteInterval, comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
 import { phrasePerformanceScore, sustainTierFor } from './sustain'
 import type { PhrasePerformance, SustainEvent } from './sustain'
 import {
   BASE_DAMAGE,
+  BATTLEFIELD,
   CHORD_MULTIPLIER,
   CHORD_TOGETHER_WINDOW,
   JUDGMENT_WINDOWS,
@@ -78,6 +79,17 @@ export interface WhiffEvent {
   readonly lane: Lane
 }
 
+/** 到线咬击（ADR-0011）：抵达琴阵的怪物每 ATTACK_BEATS 拍咬玩家一口 */
+export interface BiteEvent {
+  readonly type: 'bite'
+  /** 咬击的确定时刻（抵达 + k × 咬击间隔，与 tick 粒度无关） */
+  readonly time: number
+  readonly monsterId: number
+  readonly damage: number
+  /** 咬后的玩家 HP（0 触发败局） */
+  readonly playerHp: number
+}
+
 /** 和弦重击：齐按窗口内同组和弦全部命中的加成一击 */
 export interface ChordEvent {
   readonly type: 'chord'
@@ -101,6 +113,7 @@ export type BattleEvent =
   | StrikeEvent
   | SlainEvent
   | WhiffEvent
+  | BiteEvent
   | ChordEvent
   | SustainEvent
   | OutcomeEvent
@@ -155,6 +168,8 @@ export interface SimulatorOptions {
 interface MonsterState {
   readonly plan: MonsterPlan
   hp: number
+  /** 已发出的咬击口数（咬击时刻是排定的，与 tick 粒度无关） */
+  bitesEmitted: number
 }
 
 /** 和弦结算跟踪：成员逐一命中，齐则重击、缺则作废 */
@@ -210,7 +225,7 @@ export class Simulator {
     this.phraseRanges = chart.phrases === undefined ? undefined : phraseNoteRanges(chart)
     this.noteTiers = new Array<JudgmentTier | undefined>(chart.notes.length).fill(undefined)
     const plan = options?.monsters ?? planMonsters(chart)
-    this.monsters = plan.map((p) => ({ plan: p, hp: p.hp }))
+    this.monsters = plan.map((p) => ({ plan: p, hp: p.hp, bitesEmitted: 0 }))
     for (const note of this.notes) {
       if (note.chordId === undefined) continue
       let tracking = this.chords.get(note.chordId)
@@ -356,6 +371,8 @@ export class Simulator {
       this.battle.push({ type: 'whiff', time, noteId: note.id, lane: note.lane })
       this.missScan += 1
     }
+    this.processBites(time)
+    if (this.battleStatus !== 'fighting') return events // 咬空即定格
     this.triggerSustains(time)
     if (time >= this.duration && this.battleStatus === 'fighting') {
       // 歌毕：场上怪清完 → 胜；仍有活怪 → 败（此后再无音符可清场）
@@ -363,6 +380,36 @@ export class Simulator {
       this.finish(time, cleared ? 'victory' : 'defeat', cleared ? 'cleared' : 'monsters-remain')
     }
     return events
+  }
+
+  /**
+   * 到线咬击结算（ADR-0011）：每只抵达琴阵的活怪按排定节奏咬人，
+   * 首口在抵达后一个整间隔。咬击时刻是谱面时间的纯函数——tick 一步跨
+   * 多口则按序补齐；歌毕后不再有咬击（胜负已由歌毕裁定）。
+   */
+  private processBites(time: number): void {
+    const horizon = Math.min(time, this.duration)
+    for (const monster of this.monsters) {
+      if (monster.hp <= 0) continue
+      const arrival = arrivalTimeAt(monster.plan.spawnAt)
+      const due = Math.floor((horizon - arrival) / biteInterval())
+      while (monster.bitesEmitted < due && this.battleStatus === 'fighting') {
+        monster.bitesEmitted += 1
+        const at = arrival + monster.bitesEmitted * biteInterval()
+        this.hp = Math.max(0, this.hp - BATTLEFIELD.BITE_DAMAGE)
+        this.battle.push({
+          type: 'bite',
+          time: at,
+          monsterId: monster.plan.id,
+          damage: BATTLEFIELD.BITE_DAMAGE,
+          playerHp: this.hp,
+        })
+        if (this.hp === 0) {
+          this.finish(at, 'defeat', 'player-hp-empty')
+          return
+        }
+      }
+    }
   }
 
   /** 已入场且存活的怪（伤害与事件的承伤集合；未入场的怪在场外够不着） */
@@ -397,6 +444,17 @@ export class Simulator {
   private sweep(damage: number, time: number): void {
     for (const monster of this.spawnedAlive(time)) {
       this.dealDamage(monster, damage * decayAt(monster.plan.spawnAt, time), time)
+    }
+  }
+
+  /**
+   * 余韵/终章的全屏收势结伤：无视纵深全额——这是句末的「仰望时刻」，
+   * 剑气把整句火力泼向整个战场（深处的新生妖也吃满），由此构造性保证
+   * 终章 grand 可斩首满血墨主（无论其推进到何处）。
+   */
+  private sweepFlat(damage: number, time: number): void {
+    for (const monster of this.spawnedAlive(time)) {
+      this.dealDamage(monster, damage, time)
     }
   }
 

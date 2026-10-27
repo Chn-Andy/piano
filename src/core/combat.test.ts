@@ -340,6 +340,90 @@ describe('扑空（miss 只留可见反馈，不掉血）', () => {
   })
 })
 
+/* ── 到线咬击（ADR-0011：玩家血量仅因怪物攻击下降） ───────────────── */
+
+const BITE_INTERVAL = BATTLEFIELD.ATTACK_BEATS * BATTLEFIELD.BEAT_SECONDS
+
+describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', () => {
+  it('行程内不掉血；抵达琴阵后歇一个整间隔才咬第一口（边界含）', () => {
+    // 长谱（duration 32）覆盖咬线时刻；spawnAt=2 → 抵达 20 → 首口 21
+    const sim = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+
+    sim.tick(19.9)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+
+    sim.tick(21.0)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP - BATTLEFIELD.BITE_DAMAGE)
+  })
+
+  it('咬线节奏确定且与 tick 粒度无关：一步跨多口补齐全部咬击', () => {
+    const coarse = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+    coarse.tick(24.5) // 21/22/23/24 共 4 口（边界含：第 5 口在 25，未到）
+
+    const fine = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+    fine.tick(22.0)
+    fine.tick(23.5)
+    fine.tick(24.5)
+
+    expect(coarse.playerHp).toBe(PLAYER_MAX_HP - 4 * BATTLEFIELD.BITE_DAMAGE)
+    expect(fine.playerHp).toBe(coarse.playerHp)
+  })
+
+  it('被击杀的怪从战场移除：不再推进、不再咬线', () => {
+    const sim = new Simulator(notesEverySecond(3), { monsters: [singleMonster(BASE_DAMAGE, 1)] })
+
+    sim.keyDown(0, 1.0) // 恰好一击斩杀
+    expect(sim.monstersView()[0]!.hp).toBe(0)
+
+    sim.tick(60)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+    expect(sim.drainBattle().filter((e) => e.type === 'bite')).toHaveLength(0)
+  })
+
+  it('咬空血量 → 败局定格（player-hp-empty），多余的口不发', () => {
+    const sim = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+
+    sim.tick(35) // 21..30 共 10 口 = 100 → 恰空（咬空先于歌毕裁定）
+
+    const battle = sim.drainBattle()
+    const bites = battle.filter((e) => e.type === 'bite')
+    expect(bites).toHaveLength(10)
+    expect(sim.playerHp).toBe(0)
+    expect(sim.status).toBe('defeat')
+    const outcome = outcomeOf(battle)
+    expect(outcome.result).toBe('defeat')
+    expect(outcome.reason).toBe('player-hp-empty')
+    // 定格：时间与输入全部失效
+    expect(sim.tick(60)).toHaveLength(0)
+    expect(sim.keyDown(0, 40).events).toHaveLength(0)
+    expect(sim.drainBattle()).toHaveLength(0)
+  })
+
+  it('歌毕仍有怪存活 → 败局（monsters-remain）；全清空（含墨主）→ 胜', () => {
+    const lose = new Simulator(createChart([[1.0, 0]]), {
+      monsters: [{ id: 0, kind: 'inkDemon', spawnAt: 15, hp: 10_000 }], // 在途，未咬过人
+    })
+    lose.tick(3.1) // 谱面终点 3.0 已过
+    const lostBattle = lose.drainBattle()
+    expect(outcomeOf(lostBattle).reason).toBe('monsters-remain')
+    expect(lose.playerHp).toBe(PLAYER_MAX_HP)
+
+    const win = new Simulator(createChart([[1.0, 0]]), {
+      monsters: [
+        { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: BASE_DAMAGE },
+        { id: 1, kind: 'inkLord', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: BASE_DAMAGE },
+      ],
+    })
+    win.keyDown(0, 1.0) // 同纵深各吃一击 → 全灭（含墨主）
+    win.tick(3.1)
+    const wonBattle = win.drainBattle()
+    expect(win.monstersView().every((m) => m.hp === 0)).toBe(true)
+    expect(outcomeOf(wonBattle).result).toBe('victory')
+    expect(outcomeOf(wonBattle).reason).toBe('cleared')
+    expect(win.status).toBe('victory')
+  })
+})
+
 /* ── 和弦音符（GLOSSARY）：齐按重击 / 半按各安其位 / 松散无赏 ──────── */
 
 import { CHORD_MULTIPLIER, CHORD_TOGETHER_WINDOW } from './config'
