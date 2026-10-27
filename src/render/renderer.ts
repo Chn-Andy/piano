@@ -13,9 +13,10 @@
  *   压线即判定（工单 01 行为沿用）。
  */
 
-import type { Chart, ChartNote, Lane } from '../core/chart'
+import type { Chart, ChartNote, Lane, NoteTint } from '../core/chart'
 import { depthAt } from '../core/combat'
 import { BATTLEFIELD } from '../core/config'
+import { TINT_LABELS } from '../core/tints'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
 import type { SustainEvent } from '../core/sustain'
@@ -48,6 +49,16 @@ export interface WhiffFeedback {
   readonly lane: Lane
 }
 
+/** 最近一次异色词缀（工单 09）：判定线上的色笔与怪物身上效果的可见反馈 */
+export interface TintFeedback {
+  readonly at: number
+  readonly kind: NoteTint
+  /** 触发它的音符所在键位（判定线上的色笔位置） */
+  readonly lane: Lane | null
+  /** 效果落到的怪物（爆音的受击放大、毒音的病灶标记） */
+  readonly targetIds: readonly number[]
+}
+
 export interface RenderModel {
   readonly chart: Chart
   /** 谱面键位布局（钢琴序，含物理键与黑白键标记） */
@@ -75,6 +86,8 @@ export interface RenderModel {
   readonly bites: readonly BiteFeedback[]
   /** 最近一次扑空（判定线上的空劈斜笔） */
   readonly whiffs: readonly WhiffFeedback[]
+  /** 最近的异色词缀触发（判定线色笔 + 怪物状态） */
+  readonly tints: readonly TintFeedback[]
   /* ── 余韵（工单 04）：近期余韵事件（含终章），渲染纯函数式消费 ── */
   readonly sustains: readonly SustainEvent[]
 }
@@ -123,6 +136,16 @@ const DEEP_INK = '#1d1a15'
 const FAINT_INK = 'rgba(55,50,42,0.10)'
 const BLOOD = '#a03d2c'
 const SERIF = '"Noto Serif SC", "Songti SC", "SimSun", serif'
+
+/** 三色的墨色（工单 09）：寒音青、毒音苍、爆音朱——都压在水墨色域内，不抢纸面色 */
+const TINT_STYLE: Record<NoteTint, { label: string; color: string; glow: string }> = {
+  cold: { label: TINT_LABELS.cold, color: '#3d5f7d', glow: 'rgba(61,95,125,0.22)' },
+  toxic: { label: TINT_LABELS.toxic, color: '#4a6b3a', glow: 'rgba(74,107,58,0.22)' },
+  blast: { label: TINT_LABELS.blast, color: '#a8402c', glow: 'rgba(168,64,44,0.24)' },
+}
+
+/** 异色反馈的存续（秒）：色笔与题字 */
+const TINT_LIFE = 0.55
 
 const TIER_STYLE: Record<'Perfect' | 'Good' | 'Miss', { label: string; color: string }> = {
   Perfect: { label: '完美', color: '#8a6d1f' },
@@ -322,7 +345,14 @@ export class Renderer {
       if (alpha <= 0.01) continue
       const noteW = g.width * (g.black ? 0.78 : 0.56)
       ctx.globalAlpha = alpha
-      ctx.fillStyle = g.black ? DEEP_INK : INK
+      // 异色音符（工单 09）：色墨填充 + 外圈同色晕——余光里靠颜色分辨词缀
+      const tintStyle = note.tint === undefined ? null : TINT_STYLE[note.tint]
+      if (tintStyle !== null) {
+        ctx.fillStyle = tintStyle.glow
+        this.roundRect(g.cx - noteW / 2 - 6, y - noteH / 2 - 6, noteW + 12, noteH + 12, 10)
+        ctx.fill()
+      }
+      ctx.fillStyle = tintStyle?.color ?? (g.black ? DEEP_INK : INK)
       this.roundRect(g.cx - noteW / 2, y - noteH / 2, noteW, noteH, 7)
       ctx.fill()
       ctx.strokeStyle = 'rgba(239,233,220,0.35)'
@@ -392,7 +422,7 @@ export class Renderer {
 
     // 纵深 → 屏上位置：近（琴阵）大、远（深处）小；横向散布仅视觉
     const place = (monster: MonsterView, at: number): { x: number; y: number; r: number } => {
-      const f = depthAt(monster.spawnAt, at) / BATTLEFIELD.SPAWN_DEPTH
+      const f = depthAt(monster.spawnAt, at, monster.holdBack) / BATTLEFIELD.SPAWN_DEPTH
       const lateral = hash2(monster.id * 13 + 5, 91) * 2 - 1
       return {
         x: W / 2 + lateral * geom.fieldW * 0.36,
@@ -544,6 +574,19 @@ export class Renderer {
       if (isFront && hit.chord) heavy = true
     }
 
+    // 爆音命中当作重击闪（工单 09）：朱色重击没有剑气事件，反馈走词缀流
+    let blastMark = 0
+    for (const tint of m.tints) {
+      const age = m.t - tint.at
+      if (age < 0 || age > HIT_PULSE) continue
+      if (tint.kind !== 'blast' || !tint.targetIds.includes(monster.id)) continue
+      const decay = 1 - age / HIT_PULSE
+      punch = Math.max(punch, 0.24 * decay)
+      flash = Math.max(flash, decay)
+      blastMark = Math.max(blastMark, decay)
+    }
+    if (blastMark > 0) heavy = true
+
     const r = radius * (1 + punch)
     ctx.save()
     ctx.globalAlpha = alpha
@@ -585,6 +628,37 @@ export class Renderer {
       ctx.moveTo(cx + side * r * 0.14, cy - r * 0.22)
       ctx.lineTo(cx + side * r * 0.52, cy - r * 0.08)
       ctx.stroke()
+    }
+
+    // 寒音减速：青霜环（减速持续期内可见，余光读作「冻住了」）
+    if (monster.slowedUntil !== null && m.t < monster.slowedUntil) {
+      const left = monster.slowedUntil - m.t
+      ctx.globalAlpha = alpha * Math.min(0.6, 0.25 + left * 0.08)
+      ctx.strokeStyle = TINT_STYLE.cold.color
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + r * 0.08, r * 1.16, r * 0.96, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.globalAlpha = alpha
+    }
+
+    // 毒音：苍绿病灶（心口一点 + 三道垂滴）
+    if (monster.poisonUntil !== null && m.t < monster.poisonUntil) {
+      ctx.globalAlpha = alpha * 0.85
+      ctx.fillStyle = TINT_STYLE.toxic.color
+      ctx.beginPath()
+      ctx.ellipse(cx, cy + r * 0.05, r * 0.26, r * 0.2, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = TINT_STYLE.toxic.color
+      ctx.lineWidth = Math.max(1.5, r * 0.05)
+      for (const dx of [-0.4, 0, 0.4]) {
+        const drip = ((m.t * 0.7 + dx * 2) % 1) * r * 0.5
+        ctx.beginPath()
+        ctx.moveTo(cx + dx * r, cy + r * 0.3)
+        ctx.lineTo(cx + dx * r, cy + r * 0.3 + drip)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = alpha
     }
 
     // 受击纸色闪罩
@@ -677,6 +751,30 @@ export class Renderer {
       ctx.moveTo(lx - 26, judgeY - 18 - p * 26)
       ctx.lineTo(lx + 20, judgeY - 52 - p * 26)
       ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+
+    // 异色词缀的色笔与题字（工单 09）：判定线上方一撇同色墨 + 三色名
+    for (const tint of m.tints) {
+      const age = m.t - tint.at
+      if (age < 0 || age > TINT_LIFE) continue
+      const style = TINT_STYLE[tint.kind]
+      const p = age / TINT_LIFE
+      const lx = tint.lane === null ? W / 2 : (geom.lanes[tint.lane]?.cx ?? W / 2)
+      ctx.globalAlpha = (1 - p) ** 1.4
+      ctx.strokeStyle = style.color
+      ctx.lineWidth = 8 * (1 - p) + 1.5
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(lx - 30, judgeY - 8 - p * 18)
+      ctx.lineTo(lx + 26, judgeY - 46 - p * 30)
+      ctx.stroke()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = '700 22px ' + SERIF
+      ctx.fillStyle = style.color
+      // 题字抬到判定闪示之上（避免与「完美/良好」叠字），并随笔画上浮
+      ctx.fillText(style.label, lx, judgeY - 122 - p * 30)
       ctx.globalAlpha = 1
     }
 

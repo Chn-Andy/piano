@@ -32,7 +32,13 @@ import type { BattleEvent, GameEvent } from './core/simulator'
 import type { SustainEvent } from './core/sustain'
 import { markTutorialDone, tutorialDone } from './core/tutorial'
 import { Renderer } from './render/renderer'
-import type { BiteFeedback, HitFeedback, JudgmentFlash, WhiffFeedback } from './render/renderer'
+import type {
+  BiteFeedback,
+  HitFeedback,
+  JudgmentFlash,
+  TintFeedback,
+  WhiffFeedback,
+} from './render/renderer'
 import { finaleSealAt } from './render/renderer'
 
 /** 倒计时拍数与拍长（120 BPM，与合成木鱼声对应） */
@@ -93,6 +99,11 @@ const debugView: {
   sustainTier: 'minor' | 'major' | 'grand' | null
   sustainFinale: boolean
   sustainAt: number
+  /** 三色词缀触发次数与毒跳次数（工单 09 浏览器实测读数） */
+  tintCold: number
+  tintToxic: number
+  tintBlast: number
+  poisonTicks: number
 } = {
   phase: 'title',
   t: 0,
@@ -108,6 +119,10 @@ const debugView: {
   sustainTier: null,
   sustainFinale: false,
   sustainAt: 0,
+  tintCold: 0,
+  tintToxic: 0,
+  tintBlast: 0,
+  poisonTicks: 0,
 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
@@ -154,6 +169,7 @@ const hits: HitFeedback[] = []
 const slains: { at: number; monsterId: number }[] = []
 const bites: BiteFeedback[] = []
 const whiffs: WhiffFeedback[] = []
+const tints: TintFeedback[] = []
 const sustains: SustainEvent[] = []
 
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
@@ -455,6 +471,7 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   slains.length = 0
   bites.length = 0
   whiffs.length = 0
+  tints.length = 0
   sustains.length = 0
   held.clear()
   outcomeResult = null
@@ -543,6 +560,17 @@ function collectBattle(events: readonly BattleEvent[]): void {
       // 扑空（ADR-0011）：可见可闻、不掉血——判定线上的空劈
       whiffs.push({ at: e.time, lane: e.lane })
       engine.whiff(engine.now() + PLAY_EPSILON)
+    } else if (e.type === 'tint') {
+      // 异色词缀（工单 09）：判定线色笔 + 怪物状态，音效按色分档
+      tints.push({ at: e.time, kind: e.kind, lane: chart.notes[e.noteId]?.lane ?? null, targetIds: e.targetIds })
+      if (e.kind === 'cold') debugView.tintCold += 1
+      else if (e.kind === 'toxic') debugView.tintToxic += 1
+      else debugView.tintBlast += 1
+      engine.tintStrike(engine.now() + PLAY_EPSILON, e.kind)
+    } else if (e.type === 'poison') {
+      // 中毒跳伤：极轻的滴声（状态层，不抢注意力）
+      debugView.poisonTicks += 1
+      engine.poisonTick(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'bite') {
       // 咬线（ADR-0011）：玩家掉血的唯一来源——怪物突进 + 红晕 + 闷响
       bites.push({ at: e.time, monsterId: e.monsterId })
@@ -705,6 +733,7 @@ function prune(t: number): void {
   pruneExpired(slains, t, FLASH_KEEP, (s) => s.at)
   pruneExpired(bites, t, FLASH_KEEP, (b) => b.at)
   pruneExpired(whiffs, t, FLASH_KEEP, (wf) => wf.at)
+  pruneExpired(tints, t, FLASH_KEEP, (tf) => tf.at)
   pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
 }
 
@@ -729,6 +758,7 @@ function drawBackdrop(): void {
     slains: [],
     bites: [],
     whiffs: [],
+    tints: [],
     sustains: [],
   })
 }
@@ -790,6 +820,7 @@ function frame(): void {
     slains,
     bites,
     whiffs,
+    tints,
     sustains,
   })
 }

@@ -5,6 +5,7 @@ import type { Chart } from '../core/chart'
 import { WHITE_KEY_NOTES, layoutForKeys } from '../core/keymap'
 import type { SourceSong } from './midiSource'
 import { parseMidi } from './midiSource'
+import { TINT_PLAN } from '../core/config'
 import { convertChart, convertSong } from './convert'
 import {
   DIFFICULTY_RULES,
@@ -468,5 +469,83 @@ describe('三首真实 fixture：三难度谱面结构性质（工单 02/05 验�
         ).not.toThrow()
       }
     }
+  })
+})
+
+/* ── 异色词缀编排（工单 09）：频率、确定性、间隔、和弦同色 ────────────── */
+
+describe('异色音符编排（Seam 2：确定性、频率 5–8%、最小间隔、和弦同色）', () => {
+  it('三首曲三难度都排得进异色音符，且频率落在票面的 5–8%', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+
+      for (const difficulty of DIFFICULTIES) {
+        const { notes } = charts[difficulty]
+        const tinted = notes.filter((n) => n.tint !== undefined)
+        const ratio = tinted.length / notes.length
+        expect(tinted.length, `${song.title} ${difficulty}：异色可见`).toBeGreaterThan(0)
+        expect(ratio, `${song.title} ${difficulty}：频率 ${(ratio * 100).toFixed(1)}%`)
+          .toBeGreaterThanOrEqual(0.05)
+        expect(ratio, `${song.title} ${difficulty}：频率 ${(ratio * 100).toFixed(1)}%`)
+          .toBeLessThanOrEqual(0.08)
+      }
+    }
+  })
+
+  it('确定性：同一源曲两次转换逐字节一致（同曲重开布局一致）', () => {
+    const song = SONG_FIXTURES[0]!
+    const source = parseMidi(readFileSync(join(FIXTURES, song.midi)))
+    const first = convertSong(source, { id: song.id, title: song.title })
+    const second = convertSong(parseMidi(readFileSync(join(FIXTURES, song.midi))), {
+      id: song.id,
+      title: song.title,
+    })
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first))
+  })
+
+  it('最小间隔：相邻异色音符在时间上不近于 TINT_PLAN.MIN_GAP_SECONDS', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        const times = [...new Set(charts[difficulty].notes.filter((n) => n.tint !== undefined).map((n) => n.time))].sort((a, b) => a - b)
+        for (let i = 1; i < times.length; i += 1) {
+          expect(
+            times[i]! - times[i - 1]!,
+            `${song.title} ${difficulty}：第 ${i} 处异色与上一处过近`,
+          ).toBeGreaterThanOrEqual(TINT_PLAN.MIN_GAP_SECONDS - 1e-6)
+        }
+      }
+    }
+  })
+
+  it('和弦成员同色：一颗和弦只带一个词缀（不拆色）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        const byChord = new Map<number, Set<string | undefined>>()
+        for (const note of charts[difficulty].notes) {
+          if (note.chordId === undefined) continue
+          const set = byChord.get(note.chordId) ?? new Set<string | undefined>()
+          set.add(note.tint)
+          byChord.set(note.chordId, set)
+        }
+        for (const [chordId, kinds] of byChord) {
+          expect(kinds.size, `${song.title} ${difficulty} 和弦 ${chordId} 混色`).toBe(1)
+        }
+      }
+    }
+  })
+
+  it('三色都排得出来（跨全部曲目与难度，不是单色偏食）', () => {
+    const kinds = new Set<string>()
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        for (const note of charts[difficulty].notes) {
+          if (note.tint !== undefined) kinds.add(note.tint)
+        }
+      }
+    }
+    expect([...kinds].sort()).toEqual(['blast', 'cold', 'toxic'])
   })
 })

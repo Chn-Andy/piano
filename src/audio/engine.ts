@@ -181,6 +181,86 @@ export class AudioEngine {
     source.start(when)
   }
 
+  /**
+   * 异色音符的命中声（工单 09）：三色各一句，压在同族音色里但音高/包络不同，
+   * 与普通剑气的「嗤」拉开距离——耳朵也要能分辨这是哪一色。
+   * - 寒音：冰裂——高频三角波下扫 + 极短，清而尖；
+   * - 毒音：低吟——低通锯齿缓慢下沉，浊；
+   * - 爆音：轰——低频正弦重击 + 噪声炸点，短而厚。
+   */
+  tintStrike(when: number, kind: 'cold' | 'toxic' | 'blast'): void {
+    const ctx = this.context
+    if (kind === 'cold') {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(2600, when)
+      osc.frequency.exponentialRampToValueAtTime(1700, when + 0.16)
+      gain.gain.setValueAtTime(0.09, when)
+      gain.gain.exponentialRampToValueAtTime(0.001, when + 0.18)
+      osc.connect(gain).connect(this.sfxOut)
+      osc.start(when)
+      osc.stop(when + 0.2)
+      return
+    }
+    if (kind === 'toxic') {
+      const osc = ctx.createOscillator()
+      const filter = ctx.createBiquadFilter()
+      const gain = ctx.createGain()
+      osc.type = 'sawtooth'
+      osc.frequency.setValueAtTime(196, when)
+      osc.frequency.exponentialRampToValueAtTime(146, when + 0.34)
+      filter.type = 'lowpass'
+      filter.frequency.setValueAtTime(900, when)
+      filter.frequency.exponentialRampToValueAtTime(380, when + 0.34)
+      gain.gain.setValueAtTime(0.07, when)
+      gain.gain.exponentialRampToValueAtTime(0.001, when + 0.36)
+      osc.connect(filter).connect(gain).connect(this.sfxOut)
+      osc.start(when)
+      osc.stop(when + 0.36)
+      return
+    }
+    // 爆音：低频轰 + 噪声炸点
+    const boom = ctx.createOscillator()
+    const boomGain = ctx.createGain()
+    boom.type = 'sine'
+    boom.frequency.setValueAtTime(140, when)
+    boom.frequency.exponentialRampToValueAtTime(38, when + 0.24)
+    boomGain.gain.setValueAtTime(0.26, when)
+    boomGain.gain.exponentialRampToValueAtTime(0.001, when + 0.26)
+    boom.connect(boomGain).connect(this.sfxOut)
+    boom.start(when)
+    boom.stop(when + 0.26)
+
+    const seconds = 0.12
+    const source = ctx.createBufferSource()
+    source.buffer = this.noiseBuffer(seconds, 3)
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(2200, when)
+    filter.frequency.exponentialRampToValueAtTime(300, when + seconds)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.16, when)
+    gain.gain.exponentialRampToValueAtTime(0.001, when + seconds)
+    source.connect(filter).connect(gain).connect(this.sfxOut)
+    source.start(when)
+  }
+
+  /** 中毒跳伤（工单 09）：一声极轻的「滴」，比任何战斗音效都低一档——是状态不是事件 */
+  poisonTick(when: number): void {
+    const ctx = this.context
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(760, when)
+    osc.frequency.exponentialRampToValueAtTime(520, when + 0.05)
+    gain.gain.setValueAtTime(0.035, when)
+    gain.gain.exponentialRampToValueAtTime(0.001, when + 0.06)
+    osc.connect(gain).connect(this.sfxOut)
+    osc.start(when)
+    osc.stop(when + 0.07)
+  }
+
   /** 墨妖被击杀：墨点泼溅（带通白噪脉冲，Program synthesis，无素材）。 */
   monsterSlain(when: number): void {
     const ctx = this.context

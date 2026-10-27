@@ -256,6 +256,8 @@ export class Simulator {
   private readonly monsters: readonly MonsterState[]
   /** 和弦跟踪：chordId → 状态（齐按窗口与加成见 config） */
   private readonly chords = new Map<number, ChordTracking>()
+  /** 已结算过词缀的和弦（和弦成员共享词缀：一次命中只结算一次效果） */
+  private readonly tintAppliedChords = new Set<number>()
   /** 战斗事件蓄积（drainBattle 取走，顺序即发生顺序） */
   private battle: BattleEvent[] = []
   private hp = PLAYER_MAX_HP
@@ -507,8 +509,12 @@ export class Simulator {
     const alive = this.spawnedAlive(time)
     if (kind === 'cold') {
       for (const monster of alive) {
-        monster.holdBack = applyColdDelay(monster.holdBack)
+        const before = monster.holdBack
+        monster.holdBack = applyColdDelay(before)
         monster.slowedUntil = time + TINT_EFFECTS.cold.SLOW_SECONDS
+        // 击退打断咬击节奏：被推离琴阵后要重新走到线、再等一拍才咬（k 从 1 重数）。
+        // 后延已封顶（推不动了）时不重置——否则历史咬口会被重放成二次掉血。
+        if (monster.holdBack > before) monster.bitesEmitted = 0
       }
       this.battle.push({
         type: 'tint',
@@ -704,7 +710,14 @@ export class Simulator {
       comboMultiplier: multiplier,
     })
     this.sweep(damage, time)
-    if (note.tint !== undefined) this.applyTint(note, note.tint, time)
+    if (note.tint !== undefined) {
+      const chordId = note.chordId
+      // 和弦成员共享词缀：整组只结算一次（首个按下的成员触发）
+      if (chordId === undefined || !this.tintAppliedChords.has(chordId)) {
+        if (chordId !== undefined) this.tintAppliedChords.add(chordId)
+        this.applyTint(note, note.tint, time)
+      }
+    }
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
   }
 

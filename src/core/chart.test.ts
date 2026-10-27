@@ -160,3 +160,39 @@ describe('完整谱面（契约全景）', () => {
     expect(chart.phrases).toHaveLength(2)
   })
 })
+
+describe('异色词缀（工单 09，GLOSSARY：异色音符）', () => {
+  it('词缀随音符入契约；缺省即普通音符（不带键）', () => {
+    const chart = createChart([
+      [1, 0, undefined, 'cold'],
+      [2, 1, undefined, 'toxic'],
+      [3, 2, undefined, 'blast'],
+      [4, 3],
+    ])
+
+    expect(chart.notes.map((n) => n.tint)).toEqual(['cold', 'toxic', 'blast', undefined])
+    expect('tint' in chart.notes[3]!, '普通音符不带 tint 键（序列化产物保持干净）').toBe(false)
+  })
+
+  it('和弦成员必须共享同一词缀（同组只结算一次效果）', () => {
+    expect(() =>
+      createChart([
+        [1, 0, 0, 'cold'],
+        [1, 1, 0, 'blast'],
+      ]),
+    ).toThrow(/词缀不一致/)
+
+    expect(() =>
+      createChart([
+        [1, 0, 0, 'cold'],
+        [1, 1, 0],
+      ]),
+    ).toThrow(/词缀不一致/)
+
+    const ok = createChart([
+      [1, 0, 0, 'cold'],
+      [1, 1, 0, 'cold'],
+    ])
+    expect(ok.notes.every((n) => n.tint === 'cold')).toBe(true)
+  })
+})
