@@ -59,6 +59,14 @@ export interface TintFeedback {
   readonly targetIds: readonly number[]
 }
 
+/** 最近一次琴心通明（工单 10）：战场区的一圈墨爆，与余韵的收势演出分开 */
+export interface QinxinFeedback {
+  readonly at: number
+  readonly index: number
+  readonly damage: number
+  readonly targetIds: readonly number[]
+}
+
 export interface RenderModel {
   readonly chart: Chart
   /** 谱面键位布局（钢琴序，含物理键与黑白键标记） */
@@ -88,6 +96,10 @@ export interface RenderModel {
   readonly whiffs: readonly WhiffFeedback[]
   /** 最近的异色词缀触发（判定线色笔 + 怪物状态） */
   readonly tints: readonly TintFeedback[]
+  /** 琴心蓄能进度（0..1；HUD 蓄能槽） */
+  readonly qinxinGauge: number
+  /** 最近的琴心通明（战场区墨爆） */
+  readonly qinxins: readonly QinxinFeedback[]
   /* ── 余韵（工单 04）：近期余韵事件（含终章），渲染纯函数式消费 ── */
   readonly sustains: readonly SustainEvent[]
 }
@@ -100,6 +112,9 @@ const SLAIN_FADE = 0.45 // 击杀淡出（秒）
 const BITE_LIFE = 0.34 // 咬线突进与红晕（秒）
 const WHIFF_LIFE = 0.4 // 扑空斜笔（秒）
 const SWEEP_LIFE = 0.34 // AoE 剑气扫场纵深（秒）
+/** 琴心（工单 10）：青碧色与墨爆存续——刻意与余韵的墨黑、终章的朱砂分开 */
+const QINXIN_COLOR = '#3f6b63'
+const QINXIN_LIFE = 0.85
 /** 纵深 → 战场纵向几何：琴阵线（怪物停驻处）与战场最深处（生成处） */
 const LINE_INSET = 46 // 琴阵线在下落区分界线之上的距离（px）
 const FAR_Y_FRAC = 0.16 // 战场最深处的高度（占屏比）
@@ -457,6 +472,43 @@ export class Renderer {
       ctx.globalAlpha = 1
     }
 
+    // 琴心通明（工单 10）：战场中央炸开一圈青碧墨环 + 六道辐射笔。
+    // 与余韵（判定线升腾的墨浪 + 题字）、终章（朱砂印 + 闪帧）刻意分开；
+    // 只发生在战场区——下落音符与判定线一律不动（不抢注意力）。
+    for (const q of m.qinxins) {
+      const age = m.t - q.at
+      if (age < 0 || age > QINXIN_LIFE) continue
+      const p = age / QINXIN_LIFE
+      const cx = W / 2
+      const cy = (lineY + farY) / 2
+      const radius = geom.fieldW * (0.08 + 0.5 * p)
+      ctx.globalAlpha = (1 - p) ** 1.5 * 0.5
+      ctx.strokeStyle = QINXIN_COLOR
+      ctx.lineWidth = 10 * (1 - p) + 1.5
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, radius, radius * 0.62, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.globalAlpha = (1 - p) ** 2 * 0.55
+      ctx.lineWidth = 3 * (1 - p) + 1
+      for (let k = 0; k < 6; k += 1) {
+        const angle = (k / 6) * Math.PI * 2 + q.index * 0.4
+        const inner = radius * 0.55
+        const outer = radius * (1.05 + 0.2 * hash2(q.index, k))
+        ctx.beginPath()
+        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner * 0.62)
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer * 0.62)
+        ctx.stroke()
+      }
+      // 题字压在墨环中央：不碰连击数字（屏幕上方）也不碰判定线（下方）
+      ctx.globalAlpha = (1 - p) ** 1.6
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = '700 22px ' + SERIF
+      ctx.fillStyle = QINXIN_COLOR
+      ctx.fillText('琴心通明', cx, cy + 2)
+      ctx.globalAlpha = 1
+    }
+
     // 活着的怪：自深处向琴阵绘制（远的先画，近的盖在上面）
     const alive = m.monsters
       .filter((mo) => mo.spawnAt <= m.t && mo.hp > 0)
@@ -724,6 +776,34 @@ export class Renderer {
       ctx.fillStyle = BLOOD
       ctx.fillRect(0, 0, W * hpFrac, 10)
     }
+
+    // 琴心蓄能槽（工单 10）：HP 条底下一条青碧细槽——余光可读，满格即放
+    const gaugeW = Math.min(240, W * 0.22)
+    const gaugeH = 9
+    const gaugeX = 18
+    const gaugeY = 20
+    const gaugeFrac = Math.max(0, Math.min(1, m.qinxinGauge))
+    ctx.fillStyle = 'rgba(63,107,99,0.16)'
+    this.roundRect(gaugeX, gaugeY, gaugeW, gaugeH, 5)
+    ctx.fill()
+    if (gaugeFrac > 0) {
+      ctx.fillStyle = QINXIN_COLOR
+      this.roundRect(gaugeX, gaugeY, gaugeW * gaugeFrac, gaugeH, 5)
+      ctx.fill()
+    }
+    // 快满时的一记呼吸：槽要满了，肉眼能提前看到
+    if (gaugeFrac > 0.82) {
+      ctx.globalAlpha = 0.2 + 0.2 * (0.5 + 0.5 * Math.sin(m.t * 9))
+      ctx.fillStyle = QINXIN_COLOR
+      this.roundRect(gaugeX, gaugeY, gaugeW * gaugeFrac, gaugeH, 5)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.font = '400 12px ' + SERIF
+    ctx.fillStyle = 'rgba(63,107,99,0.9)'
+    ctx.fillText('琴心', gaugeX + gaugeW + 10, gaugeY + gaugeH / 2)
 
     // 被咬反馈：判定区上缘泛红渐隐（眼皮底下的警报——血量只在被咬时下降）
     for (const b of m.bites) {

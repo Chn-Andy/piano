@@ -33,6 +33,7 @@ import {
   CHORD_TOGETHER_WINDOW,
   JUDGMENT_WINDOWS,
   PLAYER_MAX_HP,
+  QINXIN,
   SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
   TINT_EFFECTS,
@@ -132,6 +133,19 @@ export interface PoisonEvent {
   readonly hpAfter: number
 }
 
+/** 琴心通明（工单 10，GLOSSARY：琴心）：蓄能满一层的自动全场爆发。
+ * 无衰减、无指向：全场所有已入场活怪同伤。targetIds 为实际承伤的怪
+ * （空场为空数组——照样发事件，演出不因空场消失）。 */
+export interface QinxinEvent {
+  readonly type: 'qinxin'
+  readonly time: number
+  /** 本次爆发的伤害（全场每只怪承伤相同） */
+  readonly damage: number
+  readonly targetIds: readonly number[]
+  /** 本次是第几炮（自 1 起） */
+  readonly index: number
+}
+
 /** 胜负面：胜 = 歌毕且场上怪清完；败 = 玩家血空，或歌毕仍有怪存活 */
 export interface OutcomeEvent {
   readonly type: 'outcome'
@@ -148,6 +162,7 @@ export type BattleEvent =
   | ChordEvent
   | TintEvent
   | PoisonEvent
+  | QinxinEvent
   | SustainEvent
   | OutcomeEvent
 
@@ -176,6 +191,8 @@ export interface BattleSummary {
   readonly miss: number
   /** 实际入账的总伤害（劈空不计） */
   readonly damageDealt: number
+  /** 本场琴心通明释放次数（工单 10；结算画面展示） */
+  readonly qinxin: number
 }
 
 /** keyDown 的结果。repeat=true 表示长按产生的重复按下，已被忽略。 */
@@ -267,6 +284,10 @@ export class Simulator {
   private goodCount = 0
   private missCount = 0
   private damageDealt = 0
+  /** 琴心已蓄的命中数（工单 10；蓄能进度 = 它 / CHARGE_COMBOS） */
+  private qinxinHits = 0
+  /** 已释放的琴心通明次数 */
+  private qinxinCount = 0
 
   constructor(chart: Chart, options?: SimulatorOptions) {
     this.notes = chart.notes
@@ -309,6 +330,16 @@ export class Simulator {
     return PLAYER_MAX_HP
   }
 
+  /** 琴心蓄能进度（0..1；HUD 蓄能槽与测试读数） */
+  get qinxinGauge(): number {
+    return this.qinxinHits / QINXIN.CHARGE_COMBOS
+  }
+
+  /** 已释放的琴心通明次数 */
+  get qinxinReleases(): number {
+    return this.qinxinCount
+  }
+
   /** 斗琴局面：进行中 / 胜 / 败 */
   get status(): BattleStatus {
     return this.battleStatus
@@ -322,6 +353,7 @@ export class Simulator {
       good: this.goodCount,
       miss: this.missCount,
       damageDealt: this.damageDealt,
+      qinxin: this.qinxinCount,
     }
   }
 
@@ -379,6 +411,7 @@ export class Simulator {
     else this.goodCount += 1
     this.noteTiers[note.id] = judgment
     this.strike(note, judgment, time)
+    this.chargeQinxin(time)
     const event: JudgmentEvent = {
       type: 'judgment',
       noteId: note.id,
@@ -719,6 +752,43 @@ export class Simulator {
       }
     }
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
+  }
+
+  /**
+   * 琴心充能（工单 10，ADR-0007 增补）：每次命中充 1/CHARGE_COMBOS 层，
+   * 满一层即自动释放「琴心通明」。Miss 不充能（根本走不到这条路径）；
+   * 连击中断只停止充能，已蓄之能不清空。溢出的充能保留到下一层——
+   * 长连击里连放两炮是应有的回报。
+   */
+  private chargeQinxin(time: number): void {
+    this.qinxinHits += 1
+    while (this.qinxinHits >= QINXIN.CHARGE_COMBOS) {
+      this.qinxinHits -= QINXIN.CHARGE_COMBOS
+      this.releaseQinxin(time)
+    }
+  }
+
+  /**
+   * 琴心通明：全场无衰减爆发（泼场同余韵，但不是剑气——不看纵深）。
+   * 伤害 = 期望每音符伤害 × QINXIN.DAMAGE_NOTE_EQUIVALENT。
+   *
+   * 与乐句余韵相遇时的次序（票面要求明确的规则）：琴心在**命中当刻**结算，
+   * 余韵在句末 + Good 窗后结算，两者独立结伤、不合并——同一 tick 内
+   * 先入流的总是琴心（命中驱动的即时反馈），余韵随后（乐句驱动的收势演出）；
+   * 演出层余韵占上半区全部注意力，琴心只在战场纵深内炸开一道墨环。
+   */
+  private releaseQinxin(time: number): void {
+    const targets = this.spawnedAlive(time)
+    const damage = focusedExpectedDamagePerNote() * QINXIN.DAMAGE_NOTE_EQUIVALENT
+    this.qinxinCount += 1
+    this.battle.push({
+      type: 'qinxin',
+      time,
+      damage,
+      targetIds: targets.map((m) => m.plan.id),
+      index: this.qinxinCount,
+    })
+    this.sweepFlat(damage, time)
   }
 
   /** 伤害入账：扣血、累计总伤害，血归零即击杀入流（剑气与和弦重击共用） */
