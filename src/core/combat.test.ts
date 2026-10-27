@@ -156,7 +156,7 @@ describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
 
 /* ── 战斗结算：命中 → 剑气 → 伤害 → 血量（模拟器公共接口） ────────── */
 
-import { BASE_DAMAGE, TIER_DAMAGE_FACTOR } from './config'
+import { BASE_DAMAGE, BATTLEFIELD, TIER_DAMAGE_FACTOR } from './config'
 import type { MonsterPlan } from './combat'
 import type { StrikeEvent } from './simulator'
 import { Simulator } from './simulator'
@@ -175,9 +175,12 @@ function outcomeOf(events: ReturnType<Simulator['drainBattle']>): OutcomeEvent {
   return found
 }
 
-/** 单怪计划的便利构造 */
-function singleMonster(hp: number, spawnAt = 0): MonsterPlan {
-  return { id: 0, kind: 'inkDemon', spawnAt, hp }
+/**
+ * 单怪计划的便利构造：默认 `at` 时刻已抵琴阵（纵深 0，吃全额剑气）；
+ * 传入原始 spawnAt 语义的场合用 rawSpawn 计划字面量。
+ */
+function singleMonster(hp: number, at = 1): MonsterPlan {
+  return { id: 0, kind: 'inkDemon', spawnAt: at - BATTLEFIELD.TRAVEL_SECONDS, hp }
 }
 
 /** 谱面便利：count 颗音符每 1 秒一颗、自 laneStart 起轮回用 5 条键位 */
@@ -236,45 +239,74 @@ describe('命中伤害（音符命中 → 对当前墨妖伤害）', () => {
   })
 })
 
-describe('目标选择（怪物随段落出场；剑气劈空不记账）', () => {
-  it('怪物未入场前的命中劈空：无伤害入账，事件 monsterId 为空', () => {
-    const sim = new Simulator(notesEverySecond(3), { monsters: [singleMonster(100, 50)] })
+describe('剑气 AoE（ADR-0012：全屏纵深衰减，无指向决策）', () => {
+  it('一次命中打击全场：不同纵深的怪同时掉血，近的吃得多', () => {
+    const decayed = BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }, // 已抵线
+      { id: 1, kind: 'inkDemon', spawnAt: 1, hp: 10_000 }, // 刚生成（纵深封顶衰减）
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+
+    const views = sim.monstersView()
+    const base = BASE_DAMAGE * comboMultiplierFor(1)
+    expect(views[0]!.hp, '前排吃全额').toBeCloseTo(10_000 - base, 9)
+    expect(views[1]!.hp, '后排按纵深衰减').toBeCloseTo(10_000 - base * decayed, 9)
+  })
+
+  it('同一纵深的怪承伤相同：横向位置不在伤害模型里（散布仅视觉）', () => {
+    const plan: readonly MonsterPlan[] = [
+      { id: 3, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 },
+      { id: 9, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 },
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+
+    const views = sim.monstersView()
+    expect(views[0]!.hp).toBe(views[1]!.hp)
+    expect(views[0]!.hp).toBeLessThan(10_000)
+  })
+
+  it('未入场的怪不承伤：剑气够不着场外；场空时剑气劈空（monsterId 空）', () => {
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1, hp: 10_000 }, // 已入场
+      { id: 1, kind: 'inkDemon', spawnAt: 5, hp: 10_000 }, // 未入场
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+    let views = sim.monstersView()
+    expect(views[1]!.hp, '场外怪不掉血').toBe(10_000)
+    expect(strikesOf(sim.drainBattle())[0]!.monsterId).toBe(0)
+
+    const emptyField = new Simulator(createChart([[2.0, 0]]), {
+      monsters: [{ id: 2, kind: 'inkDemon', spawnAt: 50, hp: 10_000 }],
+    })
+    emptyField.keyDown(0, 2.0)
+    views = emptyField.monstersView()
+    expect(views[0]!.hp, '全部怪在场外：无一掉血').toBe(10_000)
+    expect(strikesOf(emptyField.drainBattle())[0]!.monsterId).toBeNull()
+  })
+
+  it('击杀随扫场落地：前排被斩即 slain 入流，后排继续挨衰减剑气', () => {
+    const base = BASE_DAMAGE // 首击无连击
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: base }, // 一击即斩
+      { id: 1, kind: 'inkDemon', spawnAt: 1, hp: 10_000 },
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
 
     sim.keyDown(0, 1.0)
 
     const battle = sim.drainBattle()
-    expect(battle).toHaveLength(1)
-    const strike = strikesOf(battle)[0]!
-    expect(strike.monsterId).toBeNull()
-    expect(sim.monstersView()[0]!.hp, '未入场的怪不掉血').toBe(100)
-  })
-
-  it('伤害打向最早已入场的活怪；它死后溢出伤害不结转，下一只接棒', () => {
-    const plan: readonly MonsterPlan[] = [
-      { id: 0, kind: 'inkDemon', spawnAt: 0, hp: 20 },
-      { id: 1, kind: 'inkDemon', spawnAt: 5, hp: 100 },
-    ]
-    const chart = createChart([
-      [1.0, 0],
-      [2.0, 1],
-      [4.0, 2],
-      [6.0, 3],
-    ])
-    const sim = new Simulator(chart, { monsters: plan })
-
-    sim.keyDown(0, 1.0) // 10 伤害
-    sim.keyDown(1, 2.0) // 再 10，恰耗尽 20 HP → 击杀，无溢出
-    const killed = sim.drainBattle()
-    expect(killed.filter((e) => e.type === 'slain')).toHaveLength(1)
-    expect(killed[killed.length - 1]!.type).toBe('slain')
-    expect(sim.monstersView()[0]!.hp).toBe(0)
-
-    sim.keyDown(2, 4.0) // 下一只未入场（spawnAt=5）→ 剑气劈空
-    expect(sim.monstersView()[1]!.hp).toBe(100)
-    expect(strikesOf(sim.drainBattle())[0]!.monsterId).toBeNull()
-
-    sim.keyDown(3, 6.0) // 已入场 → 接棒挨打
-    expect(sim.monstersView()[1]!.hp).toBe(100 - BASE_DAMAGE * comboMultiplierFor(1))
+    const slain = battle.filter((e) => e.type === 'slain')
+    expect(slain).toHaveLength(1)
+    expect(slain[0]!.monsterId).toBe(0)
+    expect(sim.monstersView()[1]!.hp).toBeLessThan(10_000)
+    expect(sim.monstersView()[1]!.hp).toBeGreaterThan(0)
   })
 })
 
@@ -370,7 +402,7 @@ describe('和弦齐按（同组齐按 → 重击）', () => {
 })
 
 describe('和弦半按与松散（语义锁定）', () => {
-  it('半按：按下的成员正常命中结伤害（无重击），未按成员 Miss 招致反击', () => {
+  it('半按：按下的成员正常命中结伤害（无重击），未按成员 Miss 走扑空', () => {
     const sim = new Simulator(twoNoteChordChart(), { monsters: [singleMonster(1000)] })
 
     sim.keyDown(2, 1.0) // 前置单音
@@ -384,14 +416,14 @@ describe('和弦半按与松散（语义锁定）', () => {
 
     const after = sim.drainBattle()
     expect(strikesOf(after)).toHaveLength(0)
-    expect(after.filter((e) => e.type === 'counter')).toHaveLength(1)
-    expect(sim.playerHp).toBe(PLAYER_MAX_HP - COUNTER_DAMAGE)
+    expect(after.filter((e) => e.type === 'whiff')).toHaveLength(1)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP) // 扑空不掉血
     expect(chordEventsOf([...before, ...after])).toHaveLength(0) // 全程无重击
     const perNote = BASE_DAMAGE * comboMultiplierFor(2)
     expect(sim.monstersView()[0]!.hp).toBeCloseTo(1000 - 2 * perNote, 9)
   })
 
-  it('齐按超出齐按窗口（两击都命中但散）：无重击也无反击', () => {
+  it('齐按超出齐按窗口（两击都命中但散）：无重击也无扑空', () => {
     const sim = new Simulator(twoNoteChordChart(), { monsters: [singleMonster(1000)] })
 
     sim.keyDown(2, 1.0)
@@ -401,7 +433,7 @@ describe('和弦半按与松散（语义锁定）', () => {
     const battle = sim.drainBattle()
     expect(strikesOf(battle)).toHaveLength(3)
     expect(chordEventsOf(battle)).toHaveLength(0)
-    expect(battle.filter((e) => e.type === 'counter')).toHaveLength(0)
+    expect(battle.filter((e) => e.type === 'whiff')).toHaveLength(0)
     expect(sim.playerHp).toBe(PLAYER_MAX_HP)
   })
 

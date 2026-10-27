@@ -14,7 +14,7 @@
  */
 
 import type { Chart, ChartNote, Lane, Phrase } from './chart'
-import { comboMultiplierFor, planMonsters } from './combat'
+import { comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
 import { phrasePerformanceScore, sustainTierFor } from './sustain'
 import type { PhrasePerformance, SustainEvent } from './sustain'
@@ -46,14 +46,16 @@ export interface JudgmentEvent {
 
 export type GameEvent = JudgmentEvent
 
-/** 剑气（GLOSSARY：剑气）：一次命中物化成的攻击。monsterId 为空 = 劈空（无入场目标） */
+/** 剑气（GLOSSARY：剑气）：一次命中物化成的全屏纵深攻击（ADR-0012）。
+ * monsterId = 最前怪物（承伤全额者）的 id，为空 = 劈空（场上无怪）；
+ * damage = 一击的基数（全场各怪按纵深衰减分摊，见 sweep）。 */
 export interface StrikeEvent {
   readonly type: 'strike'
   readonly time: number
   readonly noteId: number
   readonly monsterId: number | null
   readonly judgment: JudgmentTier
-  /** 本次剑气伤害（劈空也携带数值，只是未入账） */
+  /** 本次剑气伤害基数（最前怪物实际承伤即此值） */
   readonly damage: number
   readonly comboMultiplier: number
 }
@@ -363,6 +365,41 @@ export class Simulator {
     return events
   }
 
+  /** 已入场且存活的怪（伤害与事件的承伤集合；未入场的怪在场外够不着） */
+  private spawnedAlive(time: number): MonsterState[] {
+    return this.monsters.filter((m) => m.plan.spawnAt <= time && m.hp > 0)
+  }
+
+  /**
+   * 最前怪物：纵深最小（离琴阵最近）；同纵深取先入场者。只作战斗事件
+   * 的指向性读数（ADR-0012：伤害本身无指向，全场按纵深衰减分摊）。
+   */
+  private frontMonster(time: number): MonsterState | null {
+    let front: MonsterState | null = null
+    for (const monster of this.spawnedAlive(time)) {
+      if (front === null) {
+        front = monster
+        continue
+      }
+      const frontDepth = depthAt(front.plan.spawnAt, time)
+      const depth = depthAt(monster.plan.spawnAt, time)
+      if (depth < frontDepth || (depth === frontDepth && monster.plan.id < front.plan.id)) {
+        front = monster
+      }
+    }
+    return front
+  }
+
+  /**
+   * 全场扫伤（ADR-0012）：一击的基数对每只已入场的活怪按纵深衰减结伤，
+   * 纵深 0 全额、逐级 ×0.6、封顶 4 级。击杀即 slain 入流。
+   */
+  private sweep(damage: number, time: number): void {
+    for (const monster of this.spawnedAlive(time)) {
+      this.dealDamage(monster, damage * decayAt(monster.plan.spawnAt, time), time)
+    }
+  }
+
   /** 该键位上、Good 窗口覆盖当前按键时刻的最早待判音符；无则 undefined。 */
   private earliestPendingNear(lane: Lane, time: number): ChartNote | undefined {
     for (const note of this.notes) {
@@ -377,14 +414,6 @@ export class Simulator {
       }
     }
     return undefined
-  }
-
-  /** 最早已入场的活怪（伤害的默认去向）；场上无怪 → null（剑气劈空） */
-  private currentTarget(time: number): MonsterState | null {
-    for (const monster of this.monsters) {
-      if (monster.plan.spawnAt <= time && monster.hp > 0) return monster
-    }
-    return null
   }
 
   /**
@@ -451,21 +480,21 @@ export class Simulator {
     this.battle.push({ type: 'outcome', time, result, reason })
   }
 
-  /** 命中结算：伤害 = 基线 × 连击倍率（结算时连击）× 判定折扣 */
+  /** 命中结算：伤害基数 = 基线 × 连击倍率（结算时连击）× 判定折扣，全场扫伤 */
   private strike(note: ChartNote, judgment: 'Perfect' | 'Good', time: number): void {
     const multiplier = comboMultiplierFor(this.comboCount)
     const damage = BASE_DAMAGE * multiplier * TIER_DAMAGE_FACTOR[judgment]
-    const target = this.currentTarget(time)
+    const front = this.frontMonster(time)
     this.battle.push({
       type: 'strike',
       time,
       noteId: note.id,
-      monsterId: target === null ? null : target.plan.id,
+      monsterId: front === null ? null : front.plan.id,
       judgment,
       damage,
       comboMultiplier: multiplier,
     })
-    if (target !== null) this.dealDamage(target, damage, time)
+    this.sweep(damage, time)
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
   }
 
@@ -496,15 +525,15 @@ export class Simulator {
     if (spread > CHORD_TOGETHER_WINDOW) return // 都命中但按散了：各算各的，无加成
 
     const bonus = tracking.damage * (CHORD_MULTIPLIER - 1)
-    const target = this.currentTarget(time)
+    const front = this.frontMonster(time)
     this.battle.push({
       type: 'chord',
       time,
       chordId: note.chordId!,
-      monsterId: target === null ? null : target.plan.id,
+      monsterId: front === null ? null : front.plan.id,
       bonusDamage: bonus,
       size: tracking.memberIds.size,
     })
-    if (target !== null) this.dealDamage(target, bonus, time)
+    this.sweep(bonus, time)
   }
 }
