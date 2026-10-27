@@ -1,6 +1,6 @@
 /**
  * 键位映射（ADR-0006）：模拟真实钢琴八度。
- * 一行字母键作白键（A S D F G H J = C4..B4），上一行键嵌于其间作黑键
+ * 一行字母键作白键（A S D F J K L = C4..B4），上一行键嵌于其间作黑键
  * （W E T Y U，对应 C#4 D#4 F#4 G#4 A#4）。v1 布局固定，不做重映射。
  *
  * 工单 01 只启用白键；黑键常量在此集中预留，中等难度（12 键）直接扩展，
@@ -10,7 +10,7 @@
 import type { Lane } from './chart'
 
 /** 白键物理键（自左至右），对应一个八度 C4..B4 */
-export const WHITE_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J'] as const
+export const WHITE_KEYS = ['A', 'S', 'D', 'F', 'J', 'K', 'L'] as const
 
 /** 白键对应的钢琴音名（供音频层选择采样；与 converter/rules.ts 的
  *  EASY_KEYS 相同——简单难度键区恰为白键八度，两处独立声明、互为印证） */
@@ -27,9 +27,9 @@ export function laneForKey(key: string): Lane | null {
 }
 
 /* ── 工单 03：按谱面键区（ChartMeta.keys）生成完整物理布局 ─────────────
- * 核心八度 C4..B4 恒定钉在 A S D F G H J（白）+ W E T Y U（黑嵌行），
+ * 核心八度 C4..B4 恒定钉在 A S D F J K L（白）+ W E T Y U（黑嵌行），
  * 三档难度的肌肉记忆由此共享（ADR-0006）。扩域原则：
- * - 上行（C5 D5…）沿本排右延 K L，其黑键（C#5）落在嵌行 O（K 与 L 之间）；
+ * - 上行（C5 C#5 D5）沿上排右延 I O P（黑键 C#5 落 I 与 P 之间的 O）；
  * - 下行（G3 A3 B3）落到下排字行 Z X C（低音 = 低位），其黑键（G#3 A#3）
  *   就近安放在数字行 2 3（仍满足"黑键在白键上排"的空间直觉）。
  * v1 定标音域 G3..D5；超出即抛错（谱面契约违约）。
@@ -39,8 +39,8 @@ export function laneForKey(key: string): Lane | null {
 const NOTE_TO_PHYSICAL: Readonly<Record<string, string>> = {
   G3: 'Z', 'G#3': '2', A3: 'X', 'A#3': '3', B3: 'C',
   C4: 'A', 'C#4': 'W', D4: 'S', 'D#4': 'E', E4: 'D',
-  F4: 'F', 'F#4': 'T', G4: 'G', 'G#4': 'Y', A4: 'H', 'A#4': 'U', B4: 'J',
-  C5: 'K', 'C#5': 'O', D5: 'L', 'D#5': 'P',
+  F4: 'F', 'F#4': 'T', G4: 'J', 'G#4': 'Y', A4: 'K', 'A#4': 'U', B4: 'L',
+  C5: 'I', 'C#5': 'O', D5: 'P',
 }
 
 /** 一个键位的完整绑定：物理键、音名、是否黑键 */

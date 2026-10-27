@@ -19,8 +19,8 @@ npm run charts     # 从公版 MIDI fixture 重新生成三难度谱面 JSON（s
 npm run pack:itch  # 构建 + 打包 itch.io HTML5 上传包 → 仓库根 xinqin-itch.zip（不入库）
 ```
 
-玩法：白键 `A S D F G H J` 对应一个八度 C4–B4，黑键 `W E T Y U` 嵌于其间，
-高级难度向两侧扩域（`K L` / `Z X C` 及黑键）。音符沿轨道落到判定线时按键，
+玩法：白键 `A S D F J K L` 对应一个八度 C4–B4，黑键 `W E T Y U` 嵌于其间，
+高级难度向两侧扩域（上排 `I O P` / 下排 `Z X C` 及黑键）。音符沿轨道落到判定线时按键，
 判定窗口 Perfect ±50ms / Good ±120ms（`src/core/config.ts` 集中可调），
 超窗即 Miss 断连击并遭墨妖反击。长按不触发重复判定；`Esc` 暂停。
 

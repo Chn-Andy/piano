@@ -151,7 +151,7 @@ const sustains: SustainEvent[] = []
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
 let libSongIndex = 0
 let libDifficulty: DifficultyName = 'easy'
-/** 引导中已点亮的物理键（A S D F G H J） */
+/** 引导中已点亮的物理键（A S D F J K L） */
 const tutorialLit = new Set<string>()
 let tutorialDeadline = Number.POSITIVE_INFINITY
 
@@ -228,7 +228,7 @@ function showLibrary(): void {
         <button id="btn-start">开战（回车）</button>
         <button id="btn-settings" class="secondary">设置（音量 / 偏移）</button>
       </div>
-      <p class="hint">↑↓ 选曲 · ←→ 选难度 · 回车 开战 · 白键 A S D F G H J，黑键嵌于其间</p>
+      <p class="hint">↑↓ 选曲 · ←→ 选难度 · 回车 开战 · 白键 A S D F J K L，黑键嵌于其间</p>
     </div>`,
   )
   overlay.querySelectorAll<HTMLElement>('.diff-cell').forEach((cell) => {
