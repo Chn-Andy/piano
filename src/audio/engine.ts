@@ -141,8 +141,11 @@ export class AudioEngine {
     osc.stop(when + 0.1)
   }
 
-  /** 墨妖反击（Miss 受击，工单 06 音效清单核对项）：低频闷响，短促下沉——"挨了一下"。 */
-  counterHit(when: number): void {
+  /**
+   * 咬线受击（工单 08，ADR-0011：玩家掉血的唯一来源是怪物到位咬线；
+ * 语义承自 v1 的"反击闷响"）：低频闷响，短促下沉——"挨了一口"。
+   */
+  biteHit(when: number): void {
     const ctx = this.context
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
@@ -154,6 +157,28 @@ export class AudioEngine {
     osc.connect(gain).connect(this.sfxOut)
     osc.start(when)
     osc.stop(when + 0.2)
+  }
+
+  /**
+   * 剑气劈空（工单 08，ADR-0011）：Miss 的剑气扫进空处——宽带白噪
+   * 向下的风声，比命中刀锋更低更钝，一瞬即逝（扑空的"呼"）。
+   */
+  whiff(when: number): void {
+    const ctx = this.context
+    const seconds = 0.14
+    const buffer = this.noiseBuffer(seconds, 2)
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.setValueAtTime(700, when)
+    filter.frequency.exponentialRampToValueAtTime(180, when + seconds)
+    filter.Q.value = 0.9
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.12, when)
+    gain.gain.exponentialRampToValueAtTime(0.001, when + seconds)
+    source.connect(filter).connect(gain).connect(this.sfxOut)
+    source.start(when)
   }
 
   /** 墨妖被击杀：墨点泼溅（带通白噪脉冲，Program synthesis，无素材）。 */

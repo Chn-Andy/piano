@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
-import { COMBO_MULTIPLIER_STOPS, MONSTER_PLAN } from './config'
-import { comboMultiplierFor, planMonsters } from './combat'
+import type { DifficultyName } from './chart'
+import {
+  BATTLEFIELD,
+  BASE_DAMAGE,
+  COMBO_MULTIPLIER_STOPS,
+  HORDE_PLAN,
+  JUDGMENT_WINDOWS,
+  PLAYER_MAX_HP,
+  SUSTAIN_STRIKE,
+  TIER_DAMAGE_FACTOR,
+} from './config'
+import {
+  arrivalTimeAt,
+  comboMultiplierFor,
+  decayAt,
+  depthAt,
+  focusedExpectedDamagePerNote,
+  planMonsters,
+} from './combat'
+import type { MonsterPlan } from './combat'
+import type { SustainEvent } from './sustain'
 
 describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   it('无连击时倍率为 1（基线伤害）', () => {
@@ -30,70 +49,127 @@ describe('连击倍率曲线（连击抬升伤害倍率）', () => {
   })
 })
 
-describe('墨妖出场计划（怪物随歌分段出场，墨主压轴）', () => {
-  /** 每 2 秒一音、跨 span 秒的合成谱面 */
-  function chartEvery2Seconds(count: number): ReturnType<typeof createChart> {
-    const pairs = Array.from({ length: count }, (_, i) => [1 + i * 2, i % 5] as const)
-    return createChart(pairs)
-  }
+/* ── 墨潮生成（工单 08：波次 × 群落，生成节奏随难度，确定性） ──────── */
 
-  it('按 SEGMENT_SECONDS 分段：每段一只墨妖，最后一段为墨主', () => {
-    // 跨度 62 秒（1..63）→ 30s 分段 → [1,31) [31,61) [61,63] 三段
-    const chart = chartEvery2Seconds(32)
+/** 带难度元数据的谱面构造（难度决定波宽与群落大小） */
+function chartWithDifficulty(
+  difficulty: DifficultyName,
+  pairs: readonly (readonly [number, number])[],
+  phrases?: readonly Phrase[],
+): Chart {
+  const meta: ChartMeta = {
+    song: 'test-song',
+    title: '测试曲',
+    difficulty,
+    keys: Array.from({ length: 7 }, (_, i) => ['C', 'D', 'E', 'F', 'G', 'A', 'B'][i]!),
+    quantizeGrid: 0.25,
+  }
+  return createChart(pairs, { meta, ...(phrases !== undefined ? { phrases } : {}) })
+}
+
+/** 每 step 秒一音、跨 span 秒的合成谱面（带难度元数据） */
+function pacedChart(difficulty: DifficultyName, step: number, count: number): Chart {
+  return chartWithDifficulty(
+    difficulty,
+    Array.from({ length: count }, (_, i) => [1 + i * step, i % 5] as const),
+  )
+}
+
+describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
+  it('按难度波宽分波：每波一群墨妖自波首错峰入场；最后一带为墨主（独行）', () => {
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    const stagger = HORDE_PLAN.GROUP_STAGGER_SECONDS
+    // 跨度跨三波：1 + 2×wave + 5 < 末音符 → 第三波为墨主波
+    const count = Math.ceil((2 * wave + 5) / 1) + 1
+    const chart = pacedChart('medium', 1, count)
     const plan = planMonsters(chart)
 
-    expect(plan).toHaveLength(3)
-    expect(plan.slice(0, -1).every((m) => m.kind === 'inkDemon')).toBe(true)
-    expect(plan[plan.length - 1]!.kind).toBe('inkLord')
-    const first = chart.notes[0]!.time
-    expect(plan.map((m) => m.spawnAt)).toEqual([
-      first,
-      first + MONSTER_PLAN.SEGMENT_SECONDS,
-      first + 2 * MONSTER_PLAN.SEGMENT_SECONDS,
-    ])
+    const demons = plan.filter((m) => m.kind === 'inkDemon')
+    const lords = plan.filter((m) => m.kind === 'inkLord')
+    expect(lords, '恰一只墨主压轴').toHaveLength(1)
+    expect(lords[0]!.spawnAt, '墨主于末波波首登场').toBe(chart.notes[0]!.time + 2 * wave)
+    expect(demons, '前两波各一群').toHaveLength(2 * HORDE_PLAN.GROUP_SIZE.medium)
+    const wave1 = demons.filter((m) => m.spawnAt < chart.notes[0]!.time + wave)
+    expect(wave1).toHaveLength(HORDE_PLAN.GROUP_SIZE.medium)
+    expect(wave1.map((m) => m.spawnAt)).toEqual([
+      1,
+      1 + stagger,
+      1 + 2 * stagger,
+    ].slice(0, HORDE_PLAN.GROUP_SIZE.medium))
   })
 
-  it('短谱（不足两段）只有一只墨妖，不生成墨主', () => {
-    const plan = planMonsters(chartEvery2Seconds(5))
-    expect(plan).toHaveLength(1)
-    expect(plan[0]!.kind).toBe('inkDemon')
+  it('生成节奏随难度：hard 波宽更窄、群落更大', () => {
+    expect(HORDE_PLAN.WAVE_SECONDS.hard).toBeLessThan(HORDE_PLAN.WAVE_SECONDS.medium)
+    expect(HORDE_PLAN.GROUP_SIZE.hard).toBeGreaterThan(HORDE_PLAN.GROUP_SIZE.medium)
+    // 同一谱面：hard 的第二波来得更早（取群内已越出第一波的最早入场）
+    const span = HORDE_PLAN.WAVE_SECONDS.medium * 3
+    const count = span + 2
+    const medium = planMonsters(pacedChart('medium', 1, count))
+    const hard = planMonsters(pacedChart('hard', 1, count))
+    const mediumSecondWave = medium.find((m) => m.spawnAt > 1 + 20)!
+    const hardSecondWave = hard.find((m) => m.spawnAt > 1 + 20)!
+    expect(hardSecondWave.spawnAt).toBeLessThan(mediumSecondWave.spawnAt)
   })
 
-  it('墨妖 HP 随所在段音符数缩放（密段更厚），且为正整数', () => {
-    // 第一段 [1,31) 每 2 秒一音 = 15 音；第二段 [31,60] 每 1 秒一音 = 30 音
+  it('HP 随波内音符数缩放且为正整数', () => {
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    // 三波：波一 15 音（每 2 秒一音）、波二 30 音（每 1 秒一音）、波三墨主
     const sparse = Array.from({ length: 15 }, (_, i) => [1 + i * 2, i % 5] as const)
-    const dense = Array.from({ length: 30 }, (_, i) => [31 + i, i % 5] as const)
-    const plan = planMonsters(createChart([...sparse, ...dense]))
+    const dense = Array.from({ length: 30 }, (_, i) => [2 + wave + i, i % 5] as const)
+    const plan = planMonsters(
+      chartWithDifficulty('medium', [...sparse, ...dense, [1 + 2 * wave + 6, 0]]),
+    )
     for (const m of plan) {
       expect(Number.isInteger(m.hp)).toBe(true)
       expect(m.hp).toBeGreaterThan(0)
-      expect(m.id).toBeGreaterThanOrEqual(0)
     }
-    expect(plan[1]!.hp, '两倍音符的段，HP 至少 1.5 倍').toBeGreaterThanOrEqual(plan[0]!.hp * 1.5)
+    const demonHp = plan.filter((m) => m.kind === 'inkDemon').map((m) => m.hp)
+    expect(demonHp).toHaveLength(2 * HORDE_PLAN.GROUP_SIZE.medium)
+    expect(demonHp[0]!, '波一 14 音的每只妖').toBeGreaterThan(0)
+    const secondWaveHp = demonHp[HORDE_PLAN.GROUP_SIZE.medium]!
+    expect(secondWaveHp, '两倍音符的波，每只妖 HP 同倍（±取整）').toBeGreaterThan(
+      demonHp[0]! * 1.8,
+    )
+    expect(secondWaveHp).toBeLessThan(demonHp[0]! * 2.2)
   })
 
-  it('同样音符数的段：墨主比墨妖更厚', () => {
-    // 两段各 15 音（每 2 秒一音）：[1,31) 与 [31,59]
-    const chart = chartEvery2Seconds(30)
-    const plan = planMonsters(chart)
-    const lord = plan[plan.length - 1]!
-    expect(lord.hp).toBeGreaterThan(plan[0]!.hp)
+  it('斩首预算不变式：带乐句谱面的墨主 HP ≤ 终章乐句预算 × LORD_HP_FRACTION', () => {
+    // 两乐句谱面：末乐句 4 音；谱面跨两波使末波为墨主波
+    const wave = HORDE_PLAN.WAVE_SECONDS.medium
+    const notes: (readonly [number, number])[] = []
+    for (let i = 0; i < wave + 4; i += 1) notes.push([1 + i, i % 5])
+    const phrases = [
+      { id: 0, start: 1, end: wave, sustainStart: wave, sustainEnd: wave + 0.6 },
+      {
+        id: 1,
+        start: 1 + wave,
+        end: 1 + wave + 3,
+        sustainStart: 1 + wave + 3,
+        sustainEnd: 1 + wave + 3.6,
+      },
+    ]
+    const chart = chartWithDifficulty('medium', notes, phrases)
+    const lord = planMonsters(chart).find((m) => m.kind === 'inkLord')!
+    const finaleBudget = 4 * focusedExpectedDamagePerNote()
+    expect(lord.hp).toBeLessThanOrEqual(Math.ceil(finaleBudget * HORDE_PLAN.LORD_HP_FRACTION))
   })
 
-  it('计划是纯函数：同一谱面两次规划完全一致', () => {
-    const chart = chartEvery2Seconds(20)
+  it('短谱（不足两波）只有一群墨妖，不生成墨主；空谱无计划', () => {
+    const short = planMonsters(pacedChart('medium', 2, 8))
+    expect(short.every((m) => m.kind === 'inkDemon')).toBe(true)
+    expect(planMonsters(createChart([]))).toEqual([])
+  })
+
+  it('计划是纯函数：同一谱面两次规划完全一致（同曲重开一致）', () => {
+    const chart = pacedChart('hard', 1, 120)
     expect(planMonsters(chart)).toEqual(planMonsters(chart))
   })
 })
 
 /* ── 战斗结算：命中 → 剑气 → 伤害 → 血量（模拟器公共接口） ────────── */
 
-import { BASE_DAMAGE, TIER_DAMAGE_FACTOR } from './config'
-import type { MonsterPlan } from './combat'
-import type { StrikeEvent } from './simulator'
+import type { StrikeEvent, OutcomeEvent } from './simulator'
 import { Simulator } from './simulator'
-
-import type { OutcomeEvent } from './simulator'
 
 /** 从战斗事件流中筛出剑气（类型收窄辅助） */
 function strikesOf(events: ReturnType<Simulator['drainBattle']>): readonly StrikeEvent[] {
@@ -107,9 +183,12 @@ function outcomeOf(events: ReturnType<Simulator['drainBattle']>): OutcomeEvent {
   return found
 }
 
-/** 单怪计划的便利构造 */
-function singleMonster(hp: number, spawnAt = 0): MonsterPlan {
-  return { id: 0, kind: 'inkDemon', spawnAt, hp }
+/**
+ * 单怪计划的便利构造：默认 `at` 时刻已抵琴阵（纵深 0，吃全额剑气）；
+ * 传入原始 spawnAt 语义的场合用 rawSpawn 计划字面量。
+ */
+function singleMonster(hp: number, at = 1): MonsterPlan {
+  return { id: 0, kind: 'inkDemon', spawnAt: at - BATTLEFIELD.TRAVEL_SECONDS, hp }
 }
 
 /** 谱面便利：count 颗音符每 1 秒一颗、自 laneStart 起轮回用 5 条键位 */
@@ -168,107 +247,297 @@ describe('命中伤害（音符命中 → 对当前墨妖伤害）', () => {
   })
 })
 
-describe('目标选择（怪物随段落出场；剑气劈空不记账）', () => {
-  it('怪物未入场前的命中劈空：无伤害入账，事件 monsterId 为空', () => {
-    const sim = new Simulator(notesEverySecond(3), { monsters: [singleMonster(100, 50)] })
+describe('剑气 AoE（ADR-0012：全屏纵深衰减，无指向决策）', () => {
+  it('一次命中打击全场：不同纵深的怪同时掉血，近的吃得多', () => {
+    const decayed = BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }, // 已抵线
+      { id: 1, kind: 'inkDemon', spawnAt: 1, hp: 10_000 }, // 刚生成（纵深封顶衰减）
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+
+    const views = sim.monstersView()
+    const base = BASE_DAMAGE * comboMultiplierFor(1)
+    expect(views[0]!.hp, '前排吃全额').toBeCloseTo(10_000 - base, 9)
+    expect(views[1]!.hp, '后排按纵深衰减').toBeCloseTo(10_000 - base * decayed, 9)
+  })
+
+  it('同一纵深的怪承伤相同：横向位置不在伤害模型里（散布仅视觉）', () => {
+    const plan: readonly MonsterPlan[] = [
+      { id: 3, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 },
+      { id: 9, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 },
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+
+    const views = sim.monstersView()
+    expect(views[0]!.hp).toBe(views[1]!.hp)
+    expect(views[0]!.hp).toBeLessThan(10_000)
+  })
+
+  it('未入场的怪不承伤：剑气够不着场外；场空时剑气劈空（monsterId 空）', () => {
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1, hp: 10_000 }, // 已入场
+      { id: 1, kind: 'inkDemon', spawnAt: 5, hp: 10_000 }, // 未入场
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
+
+    sim.keyDown(0, 1.0)
+    let views = sim.monstersView()
+    expect(views[1]!.hp, '场外怪不掉血').toBe(10_000)
+    expect(strikesOf(sim.drainBattle())[0]!.monsterId).toBe(0)
+
+    const emptyField = new Simulator(createChart([[2.0, 0]]), {
+      monsters: [{ id: 2, kind: 'inkDemon', spawnAt: 50, hp: 10_000 }],
+    })
+    emptyField.keyDown(0, 2.0)
+    views = emptyField.monstersView()
+    expect(views[0]!.hp, '全部怪在场外：无一掉血').toBe(10_000)
+    expect(strikesOf(emptyField.drainBattle())[0]!.monsterId).toBeNull()
+  })
+
+  it('击杀随扫场落地：前排被斩即 slain 入流，后排继续挨衰减剑气', () => {
+    const base = BASE_DAMAGE // 首击无连击
+    const plan: readonly MonsterPlan[] = [
+      { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: base }, // 一击即斩
+      { id: 1, kind: 'inkDemon', spawnAt: 1, hp: 10_000 },
+    ]
+    const sim = new Simulator(notesEverySecond(1), { monsters: plan })
 
     sim.keyDown(0, 1.0)
 
     const battle = sim.drainBattle()
-    expect(battle).toHaveLength(1)
-    const strike = strikesOf(battle)[0]!
-    expect(strike.monsterId).toBeNull()
-    expect(sim.monstersView()[0]!.hp, '未入场的怪不掉血').toBe(100)
-  })
-
-  it('伤害打向最早已入场的活怪；它死后溢出伤害不结转，下一只接棒', () => {
-    const plan: readonly MonsterPlan[] = [
-      { id: 0, kind: 'inkDemon', spawnAt: 0, hp: 20 },
-      { id: 1, kind: 'inkDemon', spawnAt: 5, hp: 100 },
-    ]
-    const chart = createChart([
-      [1.0, 0],
-      [2.0, 1],
-      [4.0, 2],
-      [6.0, 3],
-    ])
-    const sim = new Simulator(chart, { monsters: plan })
-
-    sim.keyDown(0, 1.0) // 10 伤害
-    sim.keyDown(1, 2.0) // 再 10，恰耗尽 20 HP → 击杀，无溢出
-    const killed = sim.drainBattle()
-    expect(killed.filter((e) => e.type === 'slain')).toHaveLength(1)
-    expect(killed[killed.length - 1]!.type).toBe('slain')
-    expect(sim.monstersView()[0]!.hp).toBe(0)
-
-    sim.keyDown(2, 4.0) // 下一只未入场（spawnAt=5）→ 剑气劈空
-    expect(sim.monstersView()[1]!.hp).toBe(100)
-    expect(strikesOf(sim.drainBattle())[0]!.monsterId).toBeNull()
-
-    sim.keyDown(3, 6.0) // 已入场 → 接棒挨打
-    expect(sim.monstersView()[1]!.hp).toBe(100 - BASE_DAMAGE * comboMultiplierFor(1))
+    const slain = battle.filter((e) => e.type === 'slain')
+    expect(slain).toHaveLength(1)
+    expect(slain[0]!.monsterId).toBe(0)
+    expect(sim.monstersView()[1]!.hp).toBeLessThan(10_000)
+    expect(sim.monstersView()[1]!.hp).toBeGreaterThan(0)
   })
 })
 
-/* ── Miss 反击与败局面（血空 / 歌毕怪未清） ────────────────────────── */
+/* ── 扑空（ADR-0011：miss 不再扣血，威胁完全来自怪物到位） ─────────── */
 
-import { COUNTER_DAMAGE, JUDGMENT_WINDOWS, PLAYER_MAX_HP } from './config'
-
-describe('Miss 反击（漏音符 → 墨妖反击 → 玩家掉血）', () => {
-  it('Miss 产生反击事件，玩家 HP 扣 COUNTER_DAMAGE，判走流不受影响', () => {
-    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(100)] })
+describe('扑空（miss 只留可见反馈，不掉血）', () => {
+  it('Miss 产生扑空战斗事件，玩家血量不动', () => {
+    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(100, 50)] })
     expect(sim.playerHp).toBe(PLAYER_MAX_HP)
 
     const judgments = sim.tick(1.0 + JUDGMENT_WINDOWS.good + 0.001)
 
     expect(judgments).toHaveLength(1) // 判定流仍只有 Miss 一条
-    expect(sim.playerHp).toBe(PLAYER_MAX_HP - COUNTER_DAMAGE)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP) // 血量纹丝不动
     const battle = sim.drainBattle()
     expect(battle).toHaveLength(1)
-    expect(battle[0]!.type).toBe('counter')
+    expect(battle[0]!.type).toBe('whiff')
     expect(sim.status).toBe('fighting')
+  })
+
+  it('漏接整谱也不掉血：未到线的妖咬不到玩家（因果链：miss→输出下降→墨潮逼近）', () => {
+    const sim = new Simulator(notesEverySecond(20), { monsters: [singleMonster(10 ** 6, 40)] })
+
+    sim.tick(15) // 前段漏接；妖在深处（40s 才生成，行程 18s 未走完）
+
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+    expect(sim.status).toBe('fighting')
+    expect(sim.drainBattle().every((e) => e.type === 'whiff' || e.type === 'strike' === false)).toBe(true)
   })
 })
 
-describe('败局（血空 / 歌毕怪未清，ADR-0004）', () => {
-  it('反击扣血至空 → 败局事件、状态定格，后续输入与时间推进全部失效', () => {
-    const chart = notesEverySecond(20)
-    const sim = new Simulator(chart, { monsters: [singleMonster(10000)] })
-    const fatalMisses = Math.ceil(PLAYER_MAX_HP / COUNTER_DAMAGE)
+/* ── 到线咬击（ADR-0011：玩家血量仅因怪物攻击下降） ───────────────── */
 
-    const judgments = sim.tick(100)
+const BITE_INTERVAL = BATTLEFIELD.ATTACK_BEATS * BATTLEFIELD.BEAT_SECONDS
+
+describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', () => {
+  it('行程内不掉血；抵达琴阵后歇一个整间隔才咬第一口（边界含）', () => {
+    // 长谱（duration 32）覆盖咬线时刻；spawnAt=2 → 抵达 20 → 首口 21
+    const sim = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+
+    sim.tick(19.9)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+
+    sim.tick(21.0)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP - BATTLEFIELD.BITE_DAMAGE)
+    const bite = sim.drainBattle().find((e) => e.type === 'bite')
+    expect(bite!.time, '首口 = 抵达 + 一个整间隔（到达 20 + BITE_INTERVAL）').toBeCloseTo(
+      20 + BITE_INTERVAL,
+      9,
+    )
+  })
+
+  it('咬线节奏确定且与 tick 粒度无关：一步跨多口补齐全部咬击', () => {
+    const coarse = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+    coarse.tick(24.5) // 21..24 共 4 口（边界含：第 5 口恰在一个 BITE_INTERVAL 后，未到）
+
+    const fine = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+    fine.tick(22.0)
+    fine.tick(23.5)
+    fine.tick(24.5)
+
+    expect(coarse.playerHp).toBe(PLAYER_MAX_HP - 4 * BATTLEFIELD.BITE_DAMAGE) // 每口一拍间隔 ×2
+    expect(fine.playerHp).toBe(coarse.playerHp)
+  })
+
+  it('被击杀的怪从战场移除：不再推进、不再咬线', () => {
+    const sim = new Simulator(notesEverySecond(3), { monsters: [singleMonster(BASE_DAMAGE, 1)] })
+
+    sim.keyDown(0, 1.0) // 恰好一击斩杀
+    expect(sim.monstersView()[0]!.hp).toBe(0)
+
+    sim.tick(60)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP)
+    expect(sim.drainBattle().filter((e) => e.type === 'bite')).toHaveLength(0)
+  })
+
+  it('咬空血量 → 败局定格（player-hp-empty），多余的口不发', () => {
+    const sim = new Simulator(createChart([[30.0, 0]]), { monsters: [singleMonster(10_000, 20)] })
+
+    sim.tick(35) // 21..30 共 10 口 = 100 → 恰空（咬空先于歌毕裁定）
+
     const battle = sim.drainBattle()
-
-    expect(sim.status).toBe('defeat')
+    const bites = battle.filter((e) => e.type === 'bite')
+    expect(bites).toHaveLength(10)
     expect(sim.playerHp).toBe(0)
-    expect(judgments).toHaveLength(fatalMisses) // 恰好打到血空的那些 Miss
-    expect(battle.filter((e) => e.type === 'counter')).toHaveLength(fatalMisses)
+    expect(sim.status).toBe('defeat')
     const outcome = outcomeOf(battle)
     expect(outcome.result).toBe('defeat')
     expect(outcome.reason).toBe('player-hp-empty')
-
-    // 定格：再怎么按、怎么推进都无事件无变化
-    const frozen = sim.keyDown(0, 50)
-    expect(frozen.events).toHaveLength(0)
-    expect(sim.tick(200)).toHaveLength(0)
+    // 定格：时间与输入全部失效
+    expect(sim.tick(60)).toHaveLength(0)
+    expect(sim.keyDown(0, 40).events).toHaveLength(0)
     expect(sim.drainBattle()).toHaveLength(0)
-    expect(sim.status).toBe('defeat')
   })
 
-  it('玩家血未空但歌毕怪未清 → 败局（reason: monsters-remain）', () => {
-    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(10000)] })
+  it('歌毕仍有怪存活 → 败局（monsters-remain）；全清空（含墨主）→ 胜', () => {
+    const lose = new Simulator(createChart([[1.0, 0]]), {
+      monsters: [{ id: 0, kind: 'inkDemon', spawnAt: 15, hp: 10_000 }], // 在途，未咬过人
+    })
+    lose.tick(3.1) // 谱面终点 3.0 已过
+    const lostBattle = lose.drainBattle()
+    expect(outcomeOf(lostBattle).reason).toBe('monsters-remain')
+    expect(lose.playerHp).toBe(PLAYER_MAX_HP)
 
-    sim.tick(1.0 + JUDGMENT_WINDOWS.good + 0.001) // 一次 Miss 反击，血未空
-    expect(sim.drainBattle().at(-1)!.type).toBe('counter')
+    const win = new Simulator(createChart([[1.0, 0]]), {
+      monsters: [
+        { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: BASE_DAMAGE },
+        { id: 1, kind: 'inkLord', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: BASE_DAMAGE },
+      ],
+    })
+    win.keyDown(0, 1.0) // 同纵深各吃一击 → 全灭（含墨主）
+    win.tick(3.1)
+    const wonBattle = win.drainBattle()
+    expect(win.monstersView().every((m) => m.hp === 0)).toBe(true)
+    expect(outcomeOf(wonBattle).result).toBe('victory')
+    expect(outcomeOf(wonBattle).reason).toBe('cleared')
+    expect(win.status).toBe('victory')
+  })
+})
 
-    sim.tick(3.1) // 谱面终点 3.0 已过
+/* ── 余韵/终章升格：真实 AoE 结伤（ADR-0007 增补 + 工单 08） ───────── */
+
+/** 从战斗流筛出余韵事件 */
+function sustainsOf(events: ReturnType<Simulator['drainBattle']>): readonly SustainEvent[] {
+  return events.filter((e): e is SustainEvent => e.type === 'sustain')
+}
+
+/** 双乐句谱面（句一 4 音 t=1..4、句二 4 音 t=5.6..8.6），余韵窗口 0.6s */
+function twoPhraseChart(): Chart {
+  return chartWithDifficulty('medium', [
+    [1.0, 0], [2.0, 1], [3.0, 0], [4.0, 2],
+    [5.6, 1], [6.6, 0], [7.6, 2], [8.6, 1],
+  ], [
+    { id: 0, start: 1, end: 4, sustainStart: 4, sustainEnd: 4.6 },
+    { id: 1, start: 5.6, end: 8.6, sustainStart: 8.6, sustainEnd: 9.2 },
+  ])
+}
+
+describe('余韵结伤（表现分档 → 全场真实伤害）', () => {
+  it('grand 余韵对全场每只怪全额结句预算（无视纵深）；伤害随事件携带', () => {
+    const sim = new Simulator(twoPhraseChart(), {
+      monsters: [
+        { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }, // 在线
+        { id: 1, kind: 'inkDemon', spawnAt: 4, hp: 10_000 }, // 句末刚生成，深处
+      ],
+    })
+    for (const [i, lane] of [0, 1, 0, 2].entries()) {
+      sim.keyDown(lane, 1 + i)
+      sim.keyUp(lane)
+    }
+    sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001) // 句一收束 → grand
+
     const battle = sim.drainBattle()
-    expect(battle).toHaveLength(1)
-    const outcome = outcomeOf(battle)
-    expect(outcome.result).toBe('defeat')
-    expect(outcome.reason).toBe('monsters-remain')
-    expect(sim.status).toBe('defeat')
-    expect(sim.playerHp).toBeGreaterThan(0)
+    const s = sustainsOf(battle)[0]!
+    expect(s.tier).toBe('grand')
+    const grandDamage = 4 * focusedExpectedDamagePerNote() * SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.grand
+    expect(s.damage).toBeCloseTo(grandDamage, 9)
+    const views = sim.monstersView()
+    // 句内 4 击先扣（倍率均基线 ×1，在线怪全额 / 深处怪封顶衰减），随后余韵全额泼场
+    expect(views[0]!.hp, '在线怪吃满').toBeCloseTo(
+      10_000 - 4 * BASE_DAMAGE - grandDamage,
+      9,
+    )
+    expect(views[1]!.hp, '深处怪同吃余韵全额（收势泼全场，直击只挨衰减零头）').toBeCloseTo(
+      10_000 - BASE_DAMAGE * decayAt(4, 4) - grandDamage,
+      9,
+    )
+  })
+
+  it('档位越高伤害越高：minor < major < grand', () => {
+    const play = (script: readonly ('hit' | 'miss')[]): number => {
+      const sim = new Simulator(twoPhraseChart(), {
+        monsters: [{ id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }],
+      })
+      for (const [i, lane] of [0, 1, 0, 2].entries()) {
+        if (script[i] === 'hit') {
+          sim.keyDown(lane, 1 + i)
+          sim.keyUp(lane)
+        }
+      }
+      sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001)
+      return sustainsOf(sim.drainBattle())[0]!.damage
+    }
+    const minor = play(['miss', 'miss', 'miss', 'miss'])
+    const grand = play(['hit', 'hit', 'hit', 'hit'])
+    expect(minor).toBeCloseTo(4 * focusedExpectedDamagePerNote() * SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.minor, 9)
+    expect(grand).toBeGreaterThan(minor)
+  })
+
+  it('终章 grand 可斩首满血墨主（无论墨主推进到何处）', () => {
+    const sim = new Simulator(twoPhraseChart(), {
+      monsters: [
+        {
+          id: 7,
+          kind: 'inkLord',
+          spawnAt: 5.6, // 末乐句起点生成，终章触发时仍在深处
+          hp: Math.ceil(4 * focusedExpectedDamagePerNote() * HORDE_PLAN.LORD_HP_FRACTION),
+        },
+      ],
+    })
+    sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001) // 句一全漏 → minor
+    sim.drainBattle()
+    expect(sim.monstersView()[0]!.hp).toBeGreaterThan(0)
+    for (const [i, lane] of [1, 0, 2, 1].entries()) {
+      sim.keyDown(lane, 5.6 + i * 1.0) // 句二全 Perfect
+      sim.keyUp(lane)
+    }
+    sim.tick(8.6 + JUDGMENT_WINDOWS.good + 0.001) // 终章 grand
+
+    const battle = sim.drainBattle()
+    const finale = sustainsOf(battle)[0]!
+    expect(finale.finale).toBe(true)
+    expect(sim.monstersView()[0]!.hp, '满血墨主被终章斩首').toBe(0)
+    expect(battle.some((e) => e.type === 'slain' && e.monsterId === 7)).toBe(true)
+  })
+
+  it('斩首不变式（构造性保证）：grand × 终章倍率 ≥ 墨主预算比例', () => {
+    expect(
+      SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.grand * SUSTAIN_STRIKE.FINALE_MULTIPLIER,
+    ).toBeGreaterThanOrEqual(HORDE_PLAN.LORD_HP_FRACTION)
+    expect(
+      SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.major * SUSTAIN_STRIKE.FINALE_MULTIPLIER,
+    ).toBeLessThan(HORDE_PLAN.LORD_HP_FRACTION) // 斩首只属于 grand
   })
 })
 
@@ -334,7 +603,7 @@ describe('和弦齐按（同组齐按 → 重击）', () => {
 })
 
 describe('和弦半按与松散（语义锁定）', () => {
-  it('半按：按下的成员正常命中结伤害（无重击），未按成员 Miss 招致反击', () => {
+  it('半按：按下的成员正常命中结伤害（无重击），未按成员 Miss 走扑空', () => {
     const sim = new Simulator(twoNoteChordChart(), { monsters: [singleMonster(1000)] })
 
     sim.keyDown(2, 1.0) // 前置单音
@@ -348,14 +617,16 @@ describe('和弦半按与松散（语义锁定）', () => {
 
     const after = sim.drainBattle()
     expect(strikesOf(after)).toHaveLength(0)
-    expect(after.filter((e) => e.type === 'counter')).toHaveLength(1)
-    expect(sim.playerHp).toBe(PLAYER_MAX_HP - COUNTER_DAMAGE)
+    expect(after.filter((e) => e.type === 'whiff')).toHaveLength(1)
+    // 在线妖在 t=2 的例行咬线（到达 1.0 后首口 2.0）；掉血来自咬线而非扑空
+    expect(after.filter((e) => e.type === 'bite')).toHaveLength(1)
+    expect(sim.playerHp).toBe(PLAYER_MAX_HP - BATTLEFIELD.BITE_DAMAGE)
     expect(chordEventsOf([...before, ...after])).toHaveLength(0) // 全程无重击
     const perNote = BASE_DAMAGE * comboMultiplierFor(2)
     expect(sim.monstersView()[0]!.hp).toBeCloseTo(1000 - 2 * perNote, 9)
   })
 
-  it('齐按超出齐按窗口（两击都命中但散）：无重击也无反击', () => {
+  it('齐按超出齐按窗口（两击都命中但散）：无重击也无扑空', () => {
     const sim = new Simulator(twoNoteChordChart(), { monsters: [singleMonster(1000)] })
 
     sim.keyDown(2, 1.0)
@@ -365,7 +636,7 @@ describe('和弦半按与松散（语义锁定）', () => {
     const battle = sim.drainBattle()
     expect(strikesOf(battle)).toHaveLength(3)
     expect(chordEventsOf(battle)).toHaveLength(0)
-    expect(battle.filter((e) => e.type === 'counter')).toHaveLength(0)
+    expect(battle.filter((e) => e.type === 'whiff')).toHaveLength(0)
     expect(sim.playerHp).toBe(PLAYER_MAX_HP)
   })
 
@@ -473,6 +744,9 @@ function playThrough(chart: Chart, style: PlayStyle): Simulator {
   return sim
 }
 
+/** 静置玩家：从不按键（墨潮长驱直入） */
+const IDLE: PlayStyle = { name: '静置', hits: () => false, offset: () => 0 }
+
 const PERFECT: PlayStyle = { name: '完美', hits: () => true, offset: () => 0 }
 /** 认真玩家：每音必接（每 20 颗失手一颗），抖动在 Perfect 窗内 */
 const FOCUSED: PlayStyle = {
@@ -487,7 +761,7 @@ const CASUAL: PlayStyle = {
   offset: (id) => ((id % 5) * 0.02) - 0.02,
 }
 
-describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (difficulty) => {
+describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质（工单 08：墨潮守线）', (difficulty) => {
   it('完美弹奏：每个音都判出，整首不断裂，终局胜利', () => {
     const chart = canonChart(difficulty)
     const sim = playThrough(chart, PERFECT)
@@ -497,13 +771,67 @@ describe.each(['easy', 'medium', 'hard'] as const)('卡农 %s 定标性质', (di
     expect(sim.status).toBe('victory')
   })
 
-  it('认真弹奏（95% 命中 + Perfect 抖动）：能撑到歌末并清场获胜', () => {
+  it('认真弹奏（95% 命中 + Perfect 抖动）：守得住琴阵，撑到歌末清场获胜', () => {
     const sim = playThrough(canonChart(difficulty), FOCUSED)
     expect(sim.status).toBe('victory')
+    expect(sim.playerHp, '认真玩家不该被打穿').toBeGreaterThanOrEqual(PLAYER_MAX_HP / 2)
   })
 
-  it('普通弹奏（三失其一）：打不完这整首（败局）', () => {
+  it('普通弹奏（三失其一）：守线失败（血空或怪残留），败局', () => {
     const sim = playThrough(canonChart(difficulty), CASUAL)
     expect(sim.status).toBe('defeat')
+  })
+
+  it('静置弹奏：墨潮推进到琴阵咬空血量——血量威胁完全来自怪物到位', () => {
+    const sim = playThrough(canonChart(difficulty), IDLE)
+    const battle = drainedOf(sim)
+    expect(sim.status).toBe('defeat')
+    expect(outcomeOf(battle).reason).toBe('player-hp-empty')
+    expect(battle.filter((e) => e.type === 'bite').length, '血空全靠咬').toBeGreaterThanOrEqual(10)
+  })
+})
+
+/** 从终局模拟器取全量战斗流（drainBattle 只出一次，测试里聚合用） */
+function drainedOf(sim: Simulator): ReturnType<Simulator['drainBattle']> {
+  const events = sim.drainBattle()
+  expect(events.length, 'drainBattle 只该在终局后调一次').toBeGreaterThan(0)
+  return events
+}
+
+/* ── 推进模型（工单 08，ADR-0011）：纵深纯函数 ─────────────────────── */
+
+describe('推进模型（恒速推进至琴阵，纵深=离琴阵距离）', () => {
+  it('生成时刻纵深最大；随后线性递减；抵达琴阵（纵深 0）后停住', () => {
+    const spawnAt = 5
+    expect(depthAt(spawnAt, spawnAt)).toBe(BATTLEFIELD.SPAWN_DEPTH)
+    expect(depthAt(spawnAt, spawnAt - 1), '未生成的怪在深处待命').toBe(BATTLEFIELD.SPAWN_DEPTH)
+
+    const mid = depthAt(spawnAt, spawnAt + BATTLEFIELD.TRAVEL_SECONDS / 2)
+    expect(mid).toBeCloseTo(BATTLEFIELD.SPAWN_DEPTH / 2, 9)
+
+    const arrival = arrivalTimeAt(spawnAt)
+    expect(arrival).toBeCloseTo(spawnAt + BATTLEFIELD.TRAVEL_SECONDS, 9)
+    expect(depthAt(spawnAt, arrival)).toBe(0)
+    expect(depthAt(spawnAt, arrival + 100), '到线后不再越过琴阵').toBe(0)
+  })
+
+  it('纵深衰减：琴阵前全额，每级 ×DECAY_RATIO，级数封顶', () => {
+    const spawnAt = 0
+    expect(decayAt(spawnAt, BATTLEFIELD.TRAVEL_SECONDS), '已抵琴阵：全额承伤').toBe(1)
+
+    const oneLevel =
+      BATTLEFIELD.TRAVEL_SECONDS -
+      BATTLEFIELD.AOE_LEVEL_DEPTH / (BATTLEFIELD.SPAWN_DEPTH / BATTLEFIELD.TRAVEL_SECONDS)
+    expect(decayAt(spawnAt, oneLevel)).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO, 9)
+
+    const capped = decayAt(spawnAt, 0) // 纵深 SPAWN_DEPTH ≥ CAP×LEVEL_DEPTH → 封顶
+    expect(capped).toBeCloseTo(BATTLEFIELD.AOE_DECAY_RATIO ** BATTLEFIELD.AOE_LEVEL_CAP, 9)
+
+    let previous = 0
+    for (let t = 0; t <= BATTLEFIELD.TRAVEL_SECONDS; t += 0.5) {
+      const d = decayAt(spawnAt, t)
+      expect(d, `t=${t} 衰减随推进单调不减`).toBeGreaterThanOrEqual(previous - 1e-12)
+      previous = d
+    }
   })
 })

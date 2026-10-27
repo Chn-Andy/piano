@@ -32,7 +32,7 @@ import type { BattleEvent, GameEvent } from './core/simulator'
 import type { SustainEvent } from './core/sustain'
 import { markTutorialDone, tutorialDone } from './core/tutorial'
 import { Renderer } from './render/renderer'
-import type { HitFeedback, JudgmentFlash } from './render/renderer'
+import type { BiteFeedback, HitFeedback, JudgmentFlash, WhiffFeedback } from './render/renderer'
 import { finaleSealAt } from './render/renderer'
 
 /** 倒计时拍数与拍长（120 BPM，与合成木鱼声对应） */
@@ -85,6 +85,10 @@ const debugView: {
   perfect: number
   good: number
   miss: number
+  /** 玩家血量与场上活妖数、累计咬线口数（工单 08 浏览器实测读数） */
+  playerHp: number
+  monstersAlive: number
+  bites: number
   /** 最近一次余韵的档位/是否终章/谱面时刻（无余韵时 null） */
   sustainTier: 'minor' | 'major' | 'grand' | null
   sustainFinale: boolean
@@ -98,6 +102,9 @@ const debugView: {
   perfect: 0,
   good: 0,
   miss: 0,
+  playerHp: 100,
+  monstersAlive: 0,
+  bites: 0,
   sustainTier: null,
   sustainFinale: false,
   sustainAt: 0,
@@ -145,7 +152,8 @@ const held = new Set<Lane>()
 const flashes: JudgmentFlash[] = []
 const hits: HitFeedback[] = []
 const slains: { at: number; monsterId: number }[] = []
-const counters: { at: number }[] = []
+const bites: BiteFeedback[] = []
+const whiffs: WhiffFeedback[] = []
 const sustains: SustainEvent[] = []
 
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
@@ -445,7 +453,8 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   flashes.length = 0
   hits.length = 0
   slains.length = 0
-  counters.length = 0
+  bites.length = 0
+  whiffs.length = 0
   sustains.length = 0
   held.clear()
   outcomeResult = null
@@ -530,9 +539,15 @@ function collectBattle(events: readonly BattleEvent[]): void {
     } else if (e.type === 'slain') {
       slains.push({ at: e.time, monsterId: e.monsterId })
       engine.monsterSlain(engine.now() + PLAY_EPSILON)
-    } else if (e.type === 'counter') {
-      counters.push({ at: e.time })
-      engine.counterHit(engine.now() + PLAY_EPSILON)
+    } else if (e.type === 'whiff') {
+      // 扑空（ADR-0011）：可见可闻、不掉血——判定线上的空劈
+      whiffs.push({ at: e.time, lane: e.lane })
+      engine.whiff(engine.now() + PLAY_EPSILON)
+    } else if (e.type === 'bite') {
+      // 咬线（ADR-0011）：玩家掉血的唯一来源——怪物突进 + 红晕 + 闷响
+      bites.push({ at: e.time, monsterId: e.monsterId })
+      debugView.bites += 1 // 累计口数（bites 列表本身按淡出期剪裁）
+      engine.biteHit(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'sustain') {
       sustains.push(e)
       debugView.sustainTier = e.tier
@@ -688,7 +703,8 @@ function prune(t: number): void {
   pruneExpired(flashes, t, FLASH_KEEP, (f) => f.at)
   pruneExpired(hits, t, FLASH_KEEP, (h) => h.at)
   pruneExpired(slains, t, FLASH_KEEP, (s) => s.at)
-  pruneExpired(counters, t, FLASH_KEEP, (c) => c.at)
+  pruneExpired(bites, t, FLASH_KEEP, (b) => b.at)
+  pruneExpired(whiffs, t, FLASH_KEEP, (wf) => wf.at)
   pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
 }
 
@@ -711,7 +727,8 @@ function drawBackdrop(): void {
     playerMaxHp: PLAYER_MAX_HP,
     hits: [],
     slains: [],
-    counters: [],
+    bites: [],
+    whiffs: [],
     sustains: [],
   })
 }
@@ -753,6 +770,8 @@ function frame(): void {
   debugView.perfect = summaryNow.perfect
   debugView.good = summaryNow.good
   debugView.miss = summaryNow.miss
+  debugView.playerHp = sim.playerHp
+  debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
 
   renderer.draw({
     chart,
@@ -769,7 +788,8 @@ function frame(): void {
     playerMaxHp: sim.playerMaxHp,
     hits,
     slains,
-    counters,
+    bites,
+    whiffs,
     sustains,
   })
 }

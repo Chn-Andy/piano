@@ -8,23 +8,25 @@
  * 输入：谱面 + 以音频时钟计时的按键事件序列。
  * 输出两条可观察事件流：
  * - 判定流（keyDown / tick 返回）：Perfect / Good / Miss 与连击状态；
- * - 战斗流（drainBattle 取走）：剑气伤害、墨妖反击与击杀、胜负面
- *   （战斗数值不是分数换皮，全部收进本层，ADR-0004）。
+ * - 战斗流（drainBattle 取走）：剑气 AoE、扑空、咬线、击杀与胜负面
+ *   （战斗数值不是分数换皮，全部收进本层，ADR-0004/0011/0012）。
  * 其余状态经 monstersView() / playerHp / summary() 查询。
  */
 
 import type { Chart, ChartNote, Lane, Phrase } from './chart'
-import { comboMultiplierFor, planMonsters } from './combat'
+import { arrivalTimeAt, biteInterval, comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
+import { focusedExpectedDamagePerNote } from './combat'
 import { phrasePerformanceScore, sustainTierFor } from './sustain'
 import type { PhrasePerformance, SustainEvent } from './sustain'
 import {
   BASE_DAMAGE,
+  BATTLEFIELD,
   CHORD_MULTIPLIER,
   CHORD_TOGETHER_WINDOW,
-  COUNTER_DAMAGE,
   JUDGMENT_WINDOWS,
   PLAYER_MAX_HP,
+  SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
 } from './config'
 
@@ -47,14 +49,16 @@ export interface JudgmentEvent {
 
 export type GameEvent = JudgmentEvent
 
-/** 剑气（GLOSSARY：剑气）：一次命中物化成的攻击。monsterId 为空 = 劈空（无入场目标） */
+/** 剑气（GLOSSARY：剑气）：一次命中物化成的全屏纵深攻击（ADR-0012）。
+ * monsterId = 最前怪物（承伤全额者）的 id，为空 = 劈空（场上无怪）；
+ * damage = 一击的基数（全场各怪按纵深衰减分摊，见 sweep）。 */
 export interface StrikeEvent {
   readonly type: 'strike'
   readonly time: number
   readonly noteId: number
   readonly monsterId: number | null
   readonly judgment: JudgmentTier
-  /** 本次剑气伤害（劈空也携带数值，只是未入账） */
+  /** 本次剑气伤害基数（最前怪物实际承伤即此值） */
   readonly damage: number
   readonly comboMultiplier: number
 }
@@ -67,14 +71,24 @@ export interface SlainEvent {
   readonly kind: MonsterKind
 }
 
-/** 墨妖反击：一次 Miss 换来的玩家掉血 */
-export interface CounterEvent {
-  readonly type: 'counter'
+/** 扑空（ADR-0011）：Miss 的剑气劈进空处——只有可见反馈，不掉血。
+ * 玩家血量的唯一来源是怪物推进到琴阵后的咬线（bite 事件）。 */
+export interface WhiffEvent {
+  readonly type: 'whiff'
   readonly time: number
-  /** 招致反击的漏接音符 */
+  /** 招致扑空的漏接音符 */
   readonly noteId: number
+  readonly lane: Lane
+}
+
+/** 到线咬击（ADR-0011）：抵达琴阵的怪物每 ATTACK_BEATS 拍咬玩家一口 */
+export interface BiteEvent {
+  readonly type: 'bite'
+  /** 咬击的确定时刻（抵达 + k × 咬击间隔，与 tick 粒度无关） */
+  readonly time: number
+  readonly monsterId: number
   readonly damage: number
-  /** 反击后的玩家 HP（0 触发败局） */
+  /** 咬后的玩家 HP（0 触发败局） */
   readonly playerHp: number
 }
 
@@ -100,7 +114,8 @@ export interface OutcomeEvent {
 export type BattleEvent =
   | StrikeEvent
   | SlainEvent
-  | CounterEvent
+  | WhiffEvent
+  | BiteEvent
   | ChordEvent
   | SustainEvent
   | OutcomeEvent
@@ -155,6 +170,8 @@ export interface SimulatorOptions {
 interface MonsterState {
   readonly plan: MonsterPlan
   hp: number
+  /** 已发出的咬击口数（咬击时刻是排定的，与 tick 粒度无关） */
+  bitesEmitted: number
 }
 
 /** 和弦结算跟踪：成员逐一命中，齐则重击、缺则作废 */
@@ -210,7 +227,7 @@ export class Simulator {
     this.phraseRanges = chart.phrases === undefined ? undefined : phraseNoteRanges(chart)
     this.noteTiers = new Array<JudgmentTier | undefined>(chart.notes.length).fill(undefined)
     const plan = options?.monsters ?? planMonsters(chart)
-    this.monsters = plan.map((p) => ({ plan: p, hp: p.hp }))
+    this.monsters = plan.map((p) => ({ plan: p, hp: p.hp, bitesEmitted: 0 }))
     for (const note of this.notes) {
       if (note.chordId === undefined) continue
       let tracking = this.chords.get(note.chordId)
@@ -353,10 +370,11 @@ export class Simulator {
         time,
         combo: 0,
       })
-      this.counter(note.id, time)
+      this.battle.push({ type: 'whiff', time, noteId: note.id, lane: note.lane })
       this.missScan += 1
-      if (this.battleStatus !== 'fighting') return events // 血空即定格
     }
+    this.processBites(time)
+    if (this.battleStatus !== 'fighting') return events // 咬空即定格
     this.triggerSustains(time)
     if (time >= this.duration && this.battleStatus === 'fighting') {
       // 歌毕：场上怪清完 → 胜；仍有活怪 → 败（此后再无音符可清场）
@@ -364,6 +382,82 @@ export class Simulator {
       this.finish(time, cleared ? 'victory' : 'defeat', cleared ? 'cleared' : 'monsters-remain')
     }
     return events
+  }
+
+  /**
+   * 到线咬击结算（ADR-0011）：每只抵达琴阵的活怪按排定节奏咬人，
+   * 首口在抵达后一个整间隔。咬击时刻是谱面时间的纯函数——tick 一步跨
+   * 多口则按序补齐；歌毕后不再有咬击（胜负已由歌毕裁定）。
+   */
+  private processBites(time: number): void {
+    const horizon = Math.min(time, this.duration)
+    for (const monster of this.monsters) {
+      if (monster.hp <= 0) continue
+      const arrival = arrivalTimeAt(monster.plan.spawnAt)
+      const due = Math.floor((horizon - arrival) / biteInterval())
+      while (monster.bitesEmitted < due && this.battleStatus === 'fighting') {
+        monster.bitesEmitted += 1
+        const at = arrival + monster.bitesEmitted * biteInterval()
+        this.hp = Math.max(0, this.hp - BATTLEFIELD.BITE_DAMAGE)
+        this.battle.push({
+          type: 'bite',
+          time: at,
+          monsterId: monster.plan.id,
+          damage: BATTLEFIELD.BITE_DAMAGE,
+          playerHp: this.hp,
+        })
+        if (this.hp === 0) {
+          this.finish(at, 'defeat', 'player-hp-empty')
+          return
+        }
+      }
+    }
+  }
+
+  /** 已入场且存活的怪（伤害与事件的承伤集合；未入场的怪在场外够不着） */
+  private spawnedAlive(time: number): MonsterState[] {
+    return this.monsters.filter((m) => m.plan.spawnAt <= time && m.hp > 0)
+  }
+
+  /**
+   * 最前怪物：纵深最小（离琴阵最近）；同纵深取先入场者。只作战斗事件
+   * 的指向性读数（ADR-0012：伤害本身无指向，全场按纵深衰减分摊）。
+   */
+  private frontMonster(time: number): MonsterState | null {
+    let front: MonsterState | null = null
+    for (const monster of this.spawnedAlive(time)) {
+      if (front === null) {
+        front = monster
+        continue
+      }
+      const frontDepth = depthAt(front.plan.spawnAt, time)
+      const depth = depthAt(monster.plan.spawnAt, time)
+      if (depth < frontDepth || (depth === frontDepth && monster.plan.id < front.plan.id)) {
+        front = monster
+      }
+    }
+    return front
+  }
+
+  /**
+   * 全场扫伤（ADR-0012）：一击的基数对每只已入场的活怪按纵深衰减结伤，
+   * 纵深 0 全额、逐级 ×0.6、封顶 4 级。击杀即 slain 入流。
+   */
+  private sweep(damage: number, time: number): void {
+    for (const monster of this.spawnedAlive(time)) {
+      this.dealDamage(monster, damage * decayAt(monster.plan.spawnAt, time), time)
+    }
+  }
+
+  /**
+   * 余韵/终章的全屏收势结伤：无视纵深全额——这是句末的「仰望时刻」，
+   * 剑气把整句火力泼向整个战场（深处的新生妖也吃满），由此构造性保证
+   * 终章 grand 可斩首满血墨主（无论其推进到何处）。
+   */
+  private sweepFlat(damage: number, time: number): void {
+    for (const monster of this.spawnedAlive(time)) {
+      this.dealDamage(monster, damage, time)
+    }
   }
 
   /** 该键位上、Good 窗口覆盖当前按键时刻的最早待判音符；无则 undefined。 */
@@ -382,14 +476,6 @@ export class Simulator {
     return undefined
   }
 
-  /** 最早已入场的活怪（伤害的默认去向）；场上无怪 → null（剑气劈空） */
-  private currentTarget(time: number): MonsterState | null {
-    for (const monster of this.monsters) {
-      if (monster.plan.spawnAt <= time && monster.hp > 0) return monster
-    }
-    return null
-  }
-
   /**
    * 余韵触发（ADR-0007：自动、零输入）：句末音符的判定收束
    * （句末时刻 + Good 窗）之后，句内全部音符必已出判定，即可安全结算
@@ -405,20 +491,31 @@ export class Simulator {
       const range = this.phraseRanges[index]!
       const perf = this.phrasePerformance(range)
       const score = phrasePerformanceScore(perf)
+      const tier = sustainTierFor(score)
       const finale = index === this.phrases.length - 1
       const lord = finale ? this.monsters.find((m) => m.plan.kind === 'inkLord') : undefined
+      const noteCount = range.last - range.first + 1
+      // 全屏收势结伤（工单 08）：句内音符预算 × 档位结伤比 × 终章倍率，全额无视纵深
+      const damage =
+        noteCount *
+        focusedExpectedDamagePerNote() *
+        SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION[tier] *
+        (finale ? SUSTAIN_STRIKE.FINALE_MULTIPLIER : 1)
+      const at = phrase.end + JUDGMENT_WINDOWS.good
       this.battle.push({
         type: 'sustain',
-        time: phrase.end + JUDGMENT_WINDOWS.good,
+        time: at,
         phraseId: phrase.id,
-        tier: sustainTierFor(score),
+        tier,
         score,
-        notes: range.last - range.first + 1,
+        notes: noteCount,
         windowStart: phrase.sustainStart,
         windowEnd: phrase.sustainEnd,
         finale,
         lordId: lord === undefined ? null : lord.plan.id,
+        damage,
       })
+      this.sweepFlat(damage, at)
     }
   }
 
@@ -444,13 +541,6 @@ export class Simulator {
     return { perfect, good, miss, longestRun }
   }
 
-  /** Miss 结算：墨妖反击，玩家掉血；血空即败局 */
-  private counter(noteId: number, time: number): void {
-    this.hp = Math.max(0, this.hp - COUNTER_DAMAGE)
-    this.battle.push({ type: 'counter', time, noteId, damage: COUNTER_DAMAGE, playerHp: this.hp })
-    if (this.hp === 0) this.finish(time, 'defeat', 'player-hp-empty')
-  }
-
   /** 终局定格：只发一次事件，此后一切输入失效 */
   private finish(
     time: number,
@@ -461,21 +551,21 @@ export class Simulator {
     this.battle.push({ type: 'outcome', time, result, reason })
   }
 
-  /** 命中结算：伤害 = 基线 × 连击倍率（结算时连击）× 判定折扣 */
+  /** 命中结算：伤害基数 = 基线 × 连击倍率（结算时连击）× 判定折扣，全场扫伤 */
   private strike(note: ChartNote, judgment: 'Perfect' | 'Good', time: number): void {
     const multiplier = comboMultiplierFor(this.comboCount)
     const damage = BASE_DAMAGE * multiplier * TIER_DAMAGE_FACTOR[judgment]
-    const target = this.currentTarget(time)
+    const front = this.frontMonster(time)
     this.battle.push({
       type: 'strike',
       time,
       noteId: note.id,
-      monsterId: target === null ? null : target.plan.id,
+      monsterId: front === null ? null : front.plan.id,
       judgment,
       damage,
       comboMultiplier: multiplier,
     })
-    if (target !== null) this.dealDamage(target, damage, time)
+    this.sweep(damage, time)
     if (note.chordId !== undefined) this.registerChordHit(note, damage, time)
   }
 
@@ -506,15 +596,15 @@ export class Simulator {
     if (spread > CHORD_TOGETHER_WINDOW) return // 都命中但按散了：各算各的，无加成
 
     const bonus = tracking.damage * (CHORD_MULTIPLIER - 1)
-    const target = this.currentTarget(time)
+    const front = this.frontMonster(time)
     this.battle.push({
       type: 'chord',
       time,
       chordId: note.chordId!,
-      monsterId: target === null ? null : target.plan.id,
+      monsterId: front === null ? null : front.plan.id,
       bonusDamage: bonus,
       size: tracking.memberIds.size,
     })
-    if (target !== null) this.dealDamage(target, bonus, time)
+    this.sweep(bonus, time)
   }
 }
