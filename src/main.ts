@@ -546,6 +546,7 @@ function collectBattle(events: readonly BattleEvent[]): void {
     } else if (e.type === 'bite') {
       // 咬线（ADR-0011）：玩家掉血的唯一来源——怪物突进 + 红晕 + 闷响
       bites.push({ at: e.time, monsterId: e.monsterId })
+      debugView.bites += 1 // 累计口数（bites 列表本身按淡出期剪裁）
       engine.biteHit(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'sustain') {
       sustains.push(e)
@@ -771,7 +772,6 @@ function frame(): void {
   debugView.miss = summaryNow.miss
   debugView.playerHp = sim.playerHp
   debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
-  debugView.bites = bites.length
 
   renderer.draw({
     chart,
