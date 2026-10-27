@@ -16,6 +16,7 @@
 import type { Chart, ChartNote, Lane, Phrase } from './chart'
 import { arrivalTimeAt, biteInterval, comboMultiplierFor, decayAt, depthAt, planMonsters } from './combat'
 import type { MonsterKind, MonsterPlan } from './combat'
+import { focusedExpectedDamagePerNote } from './combat'
 import { phrasePerformanceScore, sustainTierFor } from './sustain'
 import type { PhrasePerformance, SustainEvent } from './sustain'
 import {
@@ -25,6 +26,7 @@ import {
   CHORD_TOGETHER_WINDOW,
   JUDGMENT_WINDOWS,
   PLAYER_MAX_HP,
+  SUSTAIN_STRIKE,
   TIER_DAMAGE_FACTOR,
 } from './config'
 
@@ -489,20 +491,31 @@ export class Simulator {
       const range = this.phraseRanges[index]!
       const perf = this.phrasePerformance(range)
       const score = phrasePerformanceScore(perf)
+      const tier = sustainTierFor(score)
       const finale = index === this.phrases.length - 1
       const lord = finale ? this.monsters.find((m) => m.plan.kind === 'inkLord') : undefined
+      const noteCount = range.last - range.first + 1
+      // 全屏收势结伤（工单 08）：句内音符预算 × 档位结伤比 × 终章倍率，全额无视纵深
+      const damage =
+        noteCount *
+        focusedExpectedDamagePerNote() *
+        SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION[tier] *
+        (finale ? SUSTAIN_STRIKE.FINALE_MULTIPLIER : 1)
+      const at = phrase.end + JUDGMENT_WINDOWS.good
       this.battle.push({
         type: 'sustain',
-        time: phrase.end + JUDGMENT_WINDOWS.good,
+        time: at,
         phraseId: phrase.id,
-        tier: sustainTierFor(score),
+        tier,
         score,
-        notes: range.last - range.first + 1,
+        notes: noteCount,
         windowStart: phrase.sustainStart,
         windowEnd: phrase.sustainEnd,
         finale,
         lordId: lord === undefined ? null : lord.plan.id,
+        damage,
       })
+      this.sweepFlat(damage, at)
     }
   }
 

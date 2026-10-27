@@ -424,6 +424,116 @@ describe('到线咬击（抵达琴阵后每 2 拍咬一口，直至被杀）', (
   })
 })
 
+/* ── 余韵/终章升格：真实 AoE 结伤（ADR-0007 增补 + 工单 08） ───────── */
+
+import { SUSTAIN_STRIKE } from './config'
+import { focusedExpectedDamagePerNote } from './combat'
+import type { SustainEvent } from './sustain'
+
+/** 从战斗流筛出余韵事件 */
+function sustainsOf(events: ReturnType<Simulator['drainBattle']>): readonly SustainEvent[] {
+  return events.filter((e): e is SustainEvent => e.type === 'sustain')
+}
+
+/** 双乐句谱面（句一 4 音 t=1..4、句二 4 音 t=5.6..8.6），余韵窗口 0.6s */
+function twoPhraseChart(): Chart {
+  return chartWithDifficulty('medium', [
+    [1.0, 0], [2.0, 1], [3.0, 0], [4.0, 2],
+    [5.6, 1], [6.6, 0], [7.6, 2], [8.6, 1],
+  ], [
+    { id: 0, start: 1, end: 4, sustainStart: 4, sustainEnd: 4.6 },
+    { id: 1, start: 5.6, end: 8.6, sustainStart: 8.6, sustainEnd: 9.2 },
+  ])
+}
+
+describe('余韵结伤（表现分档 → 全场真实伤害）', () => {
+  it('grand 余韵对全场每只怪全额结句预算（无视纵深）；伤害随事件携带', () => {
+    const sim = new Simulator(twoPhraseChart(), {
+      monsters: [
+        { id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }, // 在线
+        { id: 1, kind: 'inkDemon', spawnAt: 4, hp: 10_000 }, // 句末刚生成，深处
+      ],
+    })
+    for (const [i, lane] of [0, 1, 0, 2].entries()) {
+      sim.keyDown(lane, 1 + i)
+      sim.keyUp(lane)
+    }
+    sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001) // 句一收束 → grand
+
+    const battle = sim.drainBattle()
+    const s = sustainsOf(battle)[0]!
+    expect(s.tier).toBe('grand')
+    const grandDamage = 4 * focusedExpectedDamagePerNote() * SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.grand
+    expect(s.damage).toBeCloseTo(grandDamage, 9)
+    const views = sim.monstersView()
+    // 句内 4 击先扣（倍率均基线 ×1，在线怪全额 / 深处怪封顶衰减），随后余韵全额泼场
+    expect(views[0]!.hp, '在线怪吃满').toBeCloseTo(
+      10_000 - 4 * BASE_DAMAGE - grandDamage,
+      9,
+    )
+    expect(views[1]!.hp, '深处怪同吃余韵全额（收势泼全场，直击只挨衰减零头）').toBeCloseTo(
+      10_000 - BASE_DAMAGE * decayAt(4, 4) - grandDamage,
+      9,
+    )
+  })
+
+  it('档位越高伤害越高：minor < major < grand', () => {
+    const play = (script: readonly ('hit' | 'miss')[]): number => {
+      const sim = new Simulator(twoPhraseChart(), {
+        monsters: [{ id: 0, kind: 'inkDemon', spawnAt: 1 - BATTLEFIELD.TRAVEL_SECONDS, hp: 10_000 }],
+      })
+      for (const [i, lane] of [0, 1, 0, 2].entries()) {
+        if (script[i] === 'hit') {
+          sim.keyDown(lane, 1 + i)
+          sim.keyUp(lane)
+        }
+      }
+      sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001)
+      return sustainsOf(sim.drainBattle())[0]!.damage
+    }
+    const minor = play(['miss', 'miss', 'miss', 'miss'])
+    const grand = play(['hit', 'hit', 'hit', 'hit'])
+    expect(minor).toBeCloseTo(4 * focusedExpectedDamagePerNote() * SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.minor, 9)
+    expect(grand).toBeGreaterThan(minor)
+  })
+
+  it('终章 grand 可斩首满血墨主（无论墨主推进到何处）', () => {
+    const sim = new Simulator(twoPhraseChart(), {
+      monsters: [
+        {
+          id: 7,
+          kind: 'inkLord',
+          spawnAt: 5.6, // 末乐句起点生成，终章触发时仍在深处
+          hp: Math.ceil(4 * focusedExpectedDamagePerNote() * HORDE_PLAN.LORD_HP_FRACTION),
+        },
+      ],
+    })
+    sim.tick(4 + JUDGMENT_WINDOWS.good + 0.001) // 句一全漏 → minor
+    sim.drainBattle()
+    expect(sim.monstersView()[0]!.hp).toBeGreaterThan(0)
+    for (const [i, lane] of [1, 0, 2, 1].entries()) {
+      sim.keyDown(lane, 5.6 + i * 1.0) // 句二全 Perfect
+      sim.keyUp(lane)
+    }
+    sim.tick(8.6 + JUDGMENT_WINDOWS.good + 0.001) // 终章 grand
+
+    const battle = sim.drainBattle()
+    const finale = sustainsOf(battle)[0]!
+    expect(finale.finale).toBe(true)
+    expect(sim.monstersView()[0]!.hp, '满血墨主被终章斩首').toBe(0)
+    expect(battle.some((e) => e.type === 'slain' && e.monsterId === 7)).toBe(true)
+  })
+
+  it('斩首不变式（构造性保证）：grand × 终章倍率 ≥ 墨主预算比例', () => {
+    expect(
+      SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.grand * SUSTAIN_STRIKE.FINALE_MULTIPLIER,
+    ).toBeGreaterThanOrEqual(HORDE_PLAN.LORD_HP_FRACTION)
+    expect(
+      SUSTAIN_STRIKE.TIER_DAMAGE_FRACTION.major * SUSTAIN_STRIKE.FINALE_MULTIPLIER,
+    ).toBeLessThan(HORDE_PLAN.LORD_HP_FRACTION) // 斩首只属于 grand
+  })
+})
+
 /* ── 和弦音符（GLOSSARY）：齐按重击 / 半按各安其位 / 松散无赏 ──────── */
 
 import { CHORD_MULTIPLIER, CHORD_TOGETHER_WINDOW } from './config'

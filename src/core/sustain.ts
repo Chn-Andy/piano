@@ -59,4 +59,6 @@ export interface SustainEvent {
   readonly finale: boolean
   /** 终章关联的墨主（谱面无墨主时为 null） */
   readonly lordId: number | null
+  /** 全屏收势的结伤基数（工单 08：余韵升格为真实 AoE 伤害事件，全额无视纵深） */
+  readonly damage: number
 }
