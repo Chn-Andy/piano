@@ -93,6 +93,32 @@ export type ChartNoteInput = readonly [
   tint?: NoteTint,
 ]
 
+/**
+ * 落盘谱面 JSON 的契约（转换器产物 / 装配层读入）——与 Chart 的差别只有
+ * 「id 由构造器重排」这一件：JSON 里带 id 只是为了可读，装配时忽略重算。
+ */
+export interface ChartJson {
+  readonly notes: readonly {
+    readonly time: number
+    readonly lane: Lane
+    readonly chordId?: number
+    readonly tint?: NoteTint
+  }[]
+  readonly meta?: ChartMeta
+  readonly phrases?: readonly Phrase[]
+}
+
+/** JSON → Chart：唯一的读入路径（与 createChart 共用全部不变式校验） */
+export function chartFromJson(json: ChartJson): Chart {
+  return createChart(
+    json.notes.map((n) => [n.time, n.lane, n.chordId, n.tint]),
+    {
+      ...(json.meta !== undefined ? { meta: json.meta } : {}),
+      ...(json.phrases !== undefined ? { phrases: json.phrases } : {}),
+    },
+  )
+}
+
 /** 完整谱面选项：元数据与乐句（提供即校验）。 */
 export interface ChartOptions {
   readonly meta?: ChartMeta

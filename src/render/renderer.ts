@@ -118,6 +118,13 @@ const QINXIN_LIFE = 0.85
 const LINE_INSET = 46 // 琴阵线在下落区分界线之上的距离（px）
 const FAR_Y_FRAC = 0.16 // 战场最深处的高度（占屏比）
 const FAR_SCALE = 0.45 // 最深处怪物的尺寸比例（近大远小）
+/** 横向散布幅度（键盘区宽度的比例）：纯视觉，不构成目标语义（ADR-0012） */
+const LATERAL_SPREAD = 0.36
+/**
+ * 非最前怪物的受击反馈折扣：剑气 AoE 全场都挨，但只有最前怪吃满——
+ * 后排用不到一半的闪示强度，余光里仍能读出「打到了」，又不会抢前排的戏。
+ */
+const HIT_SHARE_FAR = 0.45
 
 /* ── 余韵与终章演出（工单 04；规模分档肉眼可辨由这些参数拉开差距） ── */
 
@@ -152,11 +159,29 @@ const BLOOD = '#a03d2c'
 const SERIF = '"Noto Serif SC", "Songti SC", "SimSun", serif'
 
 /** 三色的墨色（工单 09）：寒音青、毒音苍、爆音朱——都压在水墨色域内，不抢纸面色 */
-const TINT_STYLE: Record<NoteTint, { label: string; color: string; glow: string }> = {
-  cold: { label: TINT_LABELS.cold, color: '#3d5f7d', glow: 'rgba(61,95,125,0.22)' },
-  toxic: { label: TINT_LABELS.toxic, color: '#4a6b3a', glow: 'rgba(74,107,58,0.22)' },
-  blast: { label: TINT_LABELS.blast, color: '#a8402c', glow: 'rgba(168,64,44,0.24)' },
+const TINT_STYLE: Record<NoteTint, { label: string; color: string; glow: string; wash: string }> = {
+  cold: {
+    label: TINT_LABELS.cold,
+    color: '#3d5f7d',
+    glow: 'rgba(61,95,125,0.22)',
+    wash: 'rgba(61,95,125,0.07)',
+  },
+  toxic: {
+    label: TINT_LABELS.toxic,
+    color: '#4a6b3a',
+    glow: 'rgba(74,107,58,0.22)',
+    wash: 'rgba(74,107,58,0.07)',
+  },
+  blast: {
+    label: TINT_LABELS.blast,
+    color: '#a8402c',
+    glow: 'rgba(168,64,44,0.24)',
+    wash: 'rgba(168,64,44,0.08)',
+  },
 }
+
+/** 轨道染色的长度上限（px）：只染判定线上方这一小段，读作「进近区」，不是整列彩条 */
+const TINT_WASH_LENGTH = 210
 
 /** 异色反馈的存续（秒）：色笔与题字 */
 const TINT_LIFE = 0.55
@@ -313,6 +338,21 @@ export class Renderer {
       ctx.fillRect(g.cx - g.width / 2, 0, g.width, judgeY)
     })
 
+    // 轨道染色（工单 09）：带色音符落下时，它所在的键位整列淡染同色——
+    // 余光扫一眼就知道「这一列要来一颗异色」，不必盯住音符本身
+    for (const note of m.pending) {
+      if (note.tint === undefined) continue
+      const dt = note.time - m.t
+      if (dt > VISIBLE_AHEAD) continue
+      const lane = geom.lanes[note.lane]
+      if (lane === undefined) continue
+      const top = Math.max(judgeY - TINT_WASH_LENGTH, judgeY - Math.max(dt, 0) * FALL_SPEED)
+      ctx.globalAlpha = gate === null ? 1 : gate.alpha
+      ctx.fillStyle = TINT_STYLE[note.tint].wash
+      ctx.fillRect(lane.cx - lane.width / 2, top, lane.width, judgeY - top)
+      ctx.globalAlpha = 1
+    }
+
     // 白键列分隔线（黑键嵌列不再单独分格）；余韵中随全场降调
     ctx.strokeStyle = gate === null ? FAINT_INK : 'rgba(55,50,42,0.05)'
     ctx.lineWidth = 1
@@ -439,7 +479,7 @@ export class Renderer {
       const f = depthAt(monster.spawnAt, at, monster.holdBack) / BATTLEFIELD.SPAWN_DEPTH
       const lateral = hash2(monster.id * 13 + 5, 91) * 2 - 1
       return {
-        x: W / 2 + lateral * geom.fieldW * 0.36,
+        x: W / 2 + lateral * geom.fieldW * LATERAL_SPREAD,
         y: lineY - (lineY - farY) * f,
         r: baseR * (1 - (1 - FAR_SCALE) * f),
       }
@@ -619,7 +659,7 @@ export class Renderer {
       if (age < 0 || age > HIT_PULSE) continue
       const decay = 1 - age / HIT_PULSE
       const isFront = hit.monsterId === monster.id
-      const share = isFront ? 1 : 0.45
+      const share = isFront ? 1 : HIT_SHARE_FAR
       punch = Math.max(punch, (hit.chord ? 0.22 : 0.1) * decay * share)
       flash = Math.max(flash, decay * share)
       if (isFront && hit.chord) heavy = true
@@ -723,7 +763,10 @@ export class Renderer {
     }
 
     // HP 条：怪物正下方，宽厚醒目（余光可读的主通道）
-    const barW = Math.max(r * 2.4, 64)
+    // 血条最小宽度：08 号票多怪同屏时从 v1 的 150px 收到 64px，实测过窄——
+    // 深处的怪血条只剩一条细线，违背「凭余光可感知」（ADR-0004）。折中在 88px：
+    // 三只妖同屏也不重叠，缩到最小时仍能读出「还剩几成」。
+    const barW = Math.max(r * 2.4, 88)
     const barH = 13
     const barY = cy + radius * 1.06
     ctx.globalAlpha = alpha

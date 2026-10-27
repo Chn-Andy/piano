@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
-import type { DifficultyName, NoteTint } from './chart'
+import type { Chart, ChartMeta, DifficultyName, NoteTint, Phrase } from './chart'
 import {
   BATTLEFIELD,
   BASE_DAMAGE,
@@ -345,7 +345,9 @@ describe('扑空（miss 只留可见反馈，不掉血）', () => {
 
     expect(sim.playerHp).toBe(PLAYER_MAX_HP)
     expect(sim.status).toBe('fighting')
-    expect(sim.drainBattle().every((e) => e.type === 'whiff' || e.type === 'strike' === false)).toBe(true)
+    const battle = sim.drainBattle()
+    expect(battle.some((e) => e.type === 'whiff'), '漏接留下扑空').toBe(true)
+    expect(battle.filter((e) => e.type === 'bite'), '未到线的妖咬不到人').toHaveLength(0)
   })
 })
 
@@ -714,22 +716,13 @@ describe('胜局（歌毕 + 场上怪清完）', () => {
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Chart, ChartMeta, Phrase } from './chart'
+import type { ChartJson } from './chart'
+import { chartFromJson } from './chart'
 
-interface ChartJsonFile {
-  notes: readonly { id: number; time: number; lane: number; chordId?: number; tint?: NoteTint }[]
-  meta: ChartMeta
-  phrases: readonly Phrase[]
-}
-
-/** 读入入库产物（与装配层同一条路：JSON → createChart 全量再校验） */
+/** 读入入库产物：走与装配层**同一条**读入路径（core.chartFromJson） */
 function songChart(dir: string, difficulty: 'easy' | 'medium' | 'hard'): Chart {
   const path = join(import.meta.dirname, '..', 'charts', dir, difficulty + '.json')
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as ChartJsonFile
-  return createChart(
-    raw.notes.map((n) => [n.time, n.lane, n.chordId, n.tint]),
-    { meta: raw.meta, phrases: raw.phrases },
-  )
+  return chartFromJson(JSON.parse(readFileSync(path, 'utf-8')) as ChartJson)
 }
 
 /** 弹奏模型：是否接住某音符、按键偏移多少（独立于实现的「玩家」假设） */
@@ -940,23 +933,28 @@ describe('异色音符：三色效果（工单 09）', () => {
     expect(bitesAfter(chilled), '寒音后延 3.4 秒：推离琴阵后这段时间一口也咬不到').toBe(0)
   })
 
-  it('寒音：后延封顶于全程行程，且不重放历史咬口（不掉二次血）', () => {
-    const sim = new Simulator(
-      createChart([[1, 0, undefined, 'cold'], [3, 1, undefined, 'cold'], [5, 2, undefined, 'cold']]),
-      { monsters: [atLine(10_000, 1)] },
-    )
-    for (const at of [1, 3, 5]) {
-      sim.tick(at - 0.1)
-      sim.keyDown(sim.pendingNotes()[0]!.lane, at)
-    }
+  it('寒音：已在阵上咬过多口的怪被击退，不补回已咬过的口（历史不重放）', () => {
+    // 怪 t=1 抵阵 → 咬口 2..8；t=9 施放寒音：新抵阵 4.4 已在过去，
+    // 用「已发口数」记账会把这 5 口重放一遍（掉二次血、事件时刻还记在过去）
+    const sim = new Simulator(createChart([[9, 0, undefined, 'cold'], [40, 1]]), {
+      monsters: [atLine(10_000, 1)],
+    })
+    sim.tick(8.9)
+    const earlier = sim.drainBattle().filter((e) => e.type === 'bite')
+    expect(earlier.length, '施放前已经咬过好几口').toBeGreaterThan(0)
+    const hpBefore = sim.playerHp
+
+    sim.keyDown(0, 9)
+    sim.tick(9.5)
+
+    const replay = sim.drainBattle().filter((e) => e.type === 'bite')
+    expect(replay, '击退当口不补咬').toHaveLength(0)
+    expect(sim.playerHp, '血量不因击退变化').toBe(hpBefore)
     const view = sim.monstersView()[0]!
-    expect(view.holdBack).toBeLessThanOrEqual(BATTLEFIELD.TRAVEL_SECONDS)
-    const bites = sim.drainBattle().filter((e) => e.type === 'bite')
-    const times = bites.map((e) => e.time)
-    expect(new Set(times).size, '咬击时刻互不重复').toBe(times.length)
-    expect(sim.playerHp, '咬口总伤害 = 口数 × 每口伤害').toBe(
-      PLAYER_MAX_HP - bites.length * BATTLEFIELD.BITE_DAMAGE,
+    expect(depthAt(view.spawnAt, 9, view.holdBack), '击退至少退到半步').toBeGreaterThanOrEqual(
+      TINT_EFFECTS.cold.KNOCKBACK_DEPTH - 1e-9,
     )
+    expect(view.holdBack, '后延不因多次击退无限膨胀').toBeLessThanOrEqual(BATTLEFIELD.TRAVEL_SECONDS)
   })
 
   it('毒音：最前怪中毒，每拍一跳、共 5 秒，按自身最大生命结算', () => {

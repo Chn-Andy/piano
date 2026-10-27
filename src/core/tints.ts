@@ -35,9 +35,23 @@ function coldDelayCapSeconds(): number {
   return BATTLEFIELD.TRAVEL_SECONDS
 }
 
-/** 寒音后延施加到已有后延上（封顶语义集中一处） */
-export function applyColdDelay(holdBack: number): number {
-  return Math.min(coldDelayCapSeconds(), holdBack + coldDelaySeconds())
+/**
+ * 寒音命中后的新后延。两条要求取大者：
+ * 1. **基础后延**：已有后延 + 本次的击退/减速折算（封顶于全程行程）——
+ *    对还在路上推进的怪，这就是「行程整体推后 3.4 秒」。
+ * 2. **击退保底**：无论它已经在琴阵上待了多久，命中后纵深至少退到
+ *    KNOCKBACK_DEPTH 度（半步）——纯时间记账做不到这点：在阵上坐了很久的
+ *    怪「进度超前」太多，加 3.4s 后延后纵深仍被钳在 0（等于没击退）。
+ *    保底项由「已推进时长」反解出让纵深恰好退回半步所需的后延。
+ *
+ * 取大者的代价：对在阵上的怪，实际效果是「退回半步 + 约 1.9 秒走回来」，
+ * 而不是「退半步并持续减速 3 秒」——减速已折进基础后延，两者不叠加。
+ */
+export function applyColdDelay(holdBack: number, elapsedSinceSpawn: number): number {
+  const base = Math.min(coldDelayCapSeconds(), holdBack + coldDelaySeconds())
+  const retreatFloor =
+    elapsedSinceSpawn - (BATTLEFIELD.SPAWN_DEPTH - TINT_EFFECTS.cold.KNOCKBACK_DEPTH) / advanceSpeed()
+  return Math.max(base, retreatFloor)
 }
 
 /** 毒音跳数：持续时间内按参考拍长每拍一跳 */

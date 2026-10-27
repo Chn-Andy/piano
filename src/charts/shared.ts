@@ -1,32 +1,20 @@
 /**
  * 谱面 JSON 装载共享（审查修复：三份 charts/<曲目>.ts 的 ChartJson 契约与
  * load() 逐字同形，收敛于此；第 4 首曲目直接复用）。
- * 重新经 createChart 装配：契约不变式（lane 范围、和弦、乐句与余韵窗口）
- * 在运行时再验一遍，产物损坏即启动报错。
+ * JSON 契约本身在 core/chart.ts（读入是契约的一部分），此处只做
+ * 「装配层要求 meta/phrases 必须存在」这一层收紧。
  */
 
-import { createChart } from '../core/chart'
-import type { Chart, ChartMeta, NoteTint, Phrase } from '../core/chart'
+import { chartFromJson } from '../core/chart'
+import type { Chart, ChartJson, ChartMeta, Phrase } from '../core/chart'
 
-/** 转换器落盘的谱面 JSON 契约（scripts/generate-charts.ts 的产物） */
-export interface ChartJson {
-  notes: readonly {
-    id: number
-    time: number
-    lane: number
-    chordId?: number
-    /** 异色词缀（工单 09）；缺省 = 普通音符 */
-    tint?: NoteTint
-  }[]
-  meta: ChartMeta
-  phrases: readonly Phrase[]
+/** 装配层读到的谱面 JSON：meta 与 phrases 必填（转换器产物总是带） */
+export interface LoadedChartJson extends ChartJson {
+  readonly meta: ChartMeta
+  readonly phrases: readonly Phrase[]
 }
 
 /** JSON → Chart：经 createChart 全量校验后装配（损坏即抛错，启动期暴露） */
-export function loadChart(json: ChartJson): Chart {
-  return createChart(
-    json.notes.map((n) => [n.time, n.lane, n.chordId, n.tint]),
-    // JSON 产物由转换器生成并经 createChart 全量校验；此处仅放宽类型面
-    { meta: json.meta, phrases: json.phrases },
-  )
+export function loadChart(json: LoadedChartJson): Chart {
+  return chartFromJson(json)
 }

@@ -179,6 +179,37 @@ const tints: TintFeedback[] = []
 const qinxins: QinxinFeedback[] = []
 const sustains: SustainEvent[] = []
 
+/** 清空全部战斗反馈流（开新局用：上一局的残影不许串到这一局） */
+function resetFeedback(): void {
+  flashes.length = 0
+  hits.length = 0
+  slains.length = 0
+  bites.length = 0
+  whiffs.length = 0
+  tints.length = 0
+  qinxins.length = 0
+  sustains.length = 0
+}
+
+/**
+ * 开发读数归零（开新局用）：累计型读数必须每局重来，否则「再来一次」后
+ * 的浏览器实测读数会把两局加在一起（11 号票复跑流程踩过这个坑）。
+ * 每帧从模拟器刷新的那几个字段（perfect/good/miss/playerHp/...）不用在这里清。
+ */
+function resetDebugView(): void {
+  debugView.bites = 0
+  debugView.tintCold = 0
+  debugView.tintToxic = 0
+  debugView.tintBlast = 0
+  debugView.poisonTicks = 0
+  debugView.qinxinReleases = 0
+  debugView.qinxinGauge = 0
+  debugView.sustains = 0
+  debugView.sustainTier = null
+  debugView.sustainFinale = false
+  debugView.sustainAt = 0
+}
+
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
 let libSongIndex = 0
 let libDifficulty: DifficultyName = 'easy'
@@ -473,14 +504,8 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   chart = song.charts[difficulty]
   layout = layoutForKeys(chart.meta?.keys ?? [])
   sim = new Simulator(chart)
-  flashes.length = 0
-  hits.length = 0
-  slains.length = 0
-  bites.length = 0
-  whiffs.length = 0
-  tints.length = 0
-  qinxins.length = 0
-  sustains.length = 0
+  resetFeedback()
+  resetDebugView()
   held.clear()
   outcomeResult = null
   outcomeShown = false
@@ -570,7 +595,7 @@ function collectBattle(events: readonly BattleEvent[]): void {
       engine.whiff(engine.now() + PLAY_EPSILON)
     } else if (e.type === 'tint') {
       // 异色词缀（工单 09）：判定线色笔 + 怪物状态，音效按色分档
-      tints.push({ at: e.time, kind: e.kind, lane: chart.notes[e.noteId]?.lane ?? null, targetIds: e.targetIds })
+      tints.push({ at: e.time, kind: e.kind, lane: e.lane, targetIds: e.targetIds })
       if (e.kind === 'cold') debugView.tintCold += 1
       else if (e.kind === 'toxic') debugView.tintToxic += 1
       else debugView.tintBlast += 1

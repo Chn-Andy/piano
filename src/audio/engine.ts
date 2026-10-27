@@ -8,6 +8,8 @@
  * 方案参照 Chris Wilson《A Tale of Two Clocks》。
  */
 
+import type { NoteTint } from '../core/chart'
+
 /** lookahead 视野：轮询一次覆盖的未来时长 */
 const LOOKAHEAD_SECONDS = 0.12
 /** 轮询间隔：远小于视野，保证调度总在到期前发生 */
@@ -188,7 +190,7 @@ export class AudioEngine {
    * - 毒音：低吟——低通锯齿缓慢下沉，浊；
    * - 爆音：轰——低频正弦重击 + 噪声炸点，短而厚。
    */
-  tintStrike(when: number, kind: 'cold' | 'toxic' | 'blast'): void {
+  tintStrike(when: number, kind: NoteTint): void {
     const ctx = this.context
     if (kind === 'cold') {
       const osc = ctx.createOscillator()

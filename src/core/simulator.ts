@@ -119,6 +119,8 @@ export interface TintEvent {
   readonly type: 'tint'
   readonly time: number
   readonly noteId: number
+  /** 触发它的音符所在键位（渲染层据此在判定线上画色笔，无需反查谱面） */
+  readonly lane: Lane
   readonly kind: NoteTint
   readonly targetIds: readonly number[]
 }
@@ -227,8 +229,12 @@ export interface SimulatorOptions {
 interface MonsterState {
   readonly plan: MonsterPlan
   hp: number
-  /** 已发出的咬击口数（咬击时刻是排定的，与 tick 粒度无关） */
-  bitesEmitted: number
+  /**
+   * 下一口咬击的确定时刻（抵阵 + 一个整间隔起算）。用**绝对时刻**而不是
+   * 已发口数记账：寒音会重排抵阵时刻，用计数会在「新抵阵到当下」这段
+   * 已经咬过的区间里重复补口（历史咬伤被重放）。
+   */
+  nextBiteAt: number
   /** 寒音累积的行程后延（秒）：抵阵/咬线/纵深全部按它推后 */
   holdBack: number
   /** 减速状态的可见截止时刻（只为渲染可读；机制已折进 holdBack） */
@@ -299,7 +305,7 @@ export class Simulator {
     this.monsters = plan.map((p) => ({
       plan: p,
       hp: p.hp,
-      bitesEmitted: 0,
+      nextBiteAt: arrivalTimeAt(p.spawnAt) + biteInterval(),
       holdBack: 0,
       slowedUntil: 0,
       poison: null,
@@ -479,19 +485,16 @@ export class Simulator {
 
   /**
    * 到线咬击结算（ADR-0011）：每只抵达琴阵的活怪按排定节奏咬人，
-   * 首口在抵达后一个整间隔。咬击时刻是谱面时间的纯函数——tick 一步跨
-   * 多口则按序补齐；歌毕后不再有咬击（胜负已由歌毕裁定）。
+   * 首口在抵达后一个整间隔。咬击时刻存在 nextBiteAt 里——tick 一步跨多口
+   * 则按序补齐（与 tick 粒度无关）；歌毕后不再有咬击（胜负已由歌毕裁定）。
    */
   private processBites(time: number): void {
     const horizon = Math.min(time, this.duration)
     for (const monster of this.monsters) {
       if (monster.hp <= 0) continue
-      // 寒音的后延把抵阵与整条咬击节奏一起推后（工单 09）
-      const arrival = arrivalTimeAt(monster.plan.spawnAt, monster.holdBack)
-      const due = Math.floor((horizon - arrival) / biteInterval())
-      while (monster.bitesEmitted < due && this.battleStatus === 'fighting') {
-        monster.bitesEmitted += 1
-        const at = arrival + monster.bitesEmitted * biteInterval()
+      while (monster.nextBiteAt <= horizon && this.battleStatus === 'fighting') {
+        const at = monster.nextBiteAt
+        monster.nextBiteAt = at + biteInterval()
         this.hp = Math.max(0, this.hp - BATTLEFIELD.BITE_DAMAGE)
         this.battle.push({
           type: 'bite',
@@ -543,16 +546,21 @@ export class Simulator {
     if (kind === 'cold') {
       for (const monster of alive) {
         const before = monster.holdBack
-        monster.holdBack = applyColdDelay(before)
+        monster.holdBack = applyColdDelay(before, time - monster.plan.spawnAt)
         monster.slowedUntil = time + TINT_EFFECTS.cold.SLOW_SECONDS
-        // 击退打断咬击节奏：被推离琴阵后要重新走到线、再等一拍才咬（k 从 1 重数）。
-        // 后延已封顶（推不动了）时不重置——否则历史咬口会被重放成二次掉血。
-        if (monster.holdBack > before) monster.bitesEmitted = 0
+        // 击退把咬击节奏一起推后：下一口不早于「新抵阵 + 一个整间隔」。
+        // 取 max 而非直接赋值——若后延比它已在线的时间还短，怪其实仍在阵上，
+        // 排定时刻不该被提前（更不能把已经咬过的口重放一遍）。
+        if (monster.holdBack > before) {
+          const arrival = arrivalTimeAt(monster.plan.spawnAt, monster.holdBack)
+          monster.nextBiteAt = Math.max(monster.nextBiteAt, arrival + biteInterval())
+        }
       }
       this.battle.push({
         type: 'tint',
         time,
         noteId: note.id,
+        lane: note.lane,
         kind,
         targetIds: alive.map((m) => m.plan.id),
       })
@@ -568,6 +576,7 @@ export class Simulator {
         type: 'tint',
         time,
         noteId: note.id,
+        lane: note.lane,
         kind,
         targetIds: front === null ? [] : [front.plan.id],
       })
@@ -582,6 +591,7 @@ export class Simulator {
       type: 'tint',
       time,
       noteId: note.id,
+      lane: note.lane,
       kind,
       targetIds: targets.map((m) => m.plan.id),
     })
