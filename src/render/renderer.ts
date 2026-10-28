@@ -637,20 +637,19 @@ export class Renderer {
   }
 
   /**
-   * 墨妖/墨主的形貌（工单 12 重做，ADR-0005 水墨方向）。
+   * 墨妖/墨主的形貌（工单 12/13，ADR-0005 水墨方向）。
    *
-   * 造型：**一泼凝住的墨**——不规则的墨团主体 + 6~8 根长短不一的墨刺（墨点飞溅
-   * 凝住的瞬间）+ 下摆散开的墨尾；脸是一条纸面具横在上半身，面具里两道同向的
-   * 墨色细缝做眼。
+   * 形：**墨色刺客**——斗笠/兜帽、蒙面、执刀的瘦削人形。
+   * 用户反馈「看不出这是人」之后整版重做：之前那套墨团+墨刺是「怪物」，
+   * 但《心琴》的幻想是「你弹琴，刺客循声来杀你」——所以必须读得出人形：
+   * 圆的头、细的颈、展开的肩、束起的腰、分开的腿，还有一把刀。
    *
-   * 试过的坑（留在这里免得下次再走）：
-   * - 圆团+大白脸 → 读成猫头鹰/卡通；
-   * - 左右镜像的大眼睛 → 两道眼缝合成一条白带，读成嘴；
-   * - 人形斗篷+两条下摆 → 读成企鹅；
-   * 所以：**外形要刺、脸要窄、五官要少**，墨主再加双角与朱砂纹做 boss 辨识。
+   * 比例（以 r 为半径、h = r）：身高 2.0h（脚 +0.9h、头顶 −1.1h），
+   * 肩宽 0.95w、腰 0.42w、下摆 0.85w、头半径 0.17h——瘦高才像刺客。
+   * 墨主：高 1.24 倍、宽斗笠、更长的刀、腰间一道朱砂带。
    *
-   * 全部形状由 id 派生的确定性噪声 + 极慢摇摆决定：同一只怪每帧同一副面孔。
-   * aggro ∈ [0,1]：0 = 刚在深处凝成（只是墨影），1 = 贴到琴阵（眼张、爪露）。
+   * 全部姿态由 id 派生的确定性噪声 + 极慢摇摆决定：同一只怪每帧同一副姿态。
+   * aggro ∈ [0,1]：越贴琴阵，刀抬得越高（要砍你了）。
    */
   private drawGhoul(
     monster: MonsterView,
@@ -665,227 +664,190 @@ export class Renderer {
     const { ctx } = this
     const seed = monster.id * 13 + (lord ? 97 : 0)
     const ink = lord ? '#14110d' : INK
-    // 墨主整体放大：横向 1.06、纵向 1.3 倍——剪影上一眼分得出 boss
-    const w = r * (lord ? 1.02 : 0.86)
-    const h = r * (lord ? 1.3 : 1.12)
-    const sway = 0.045 * Math.sin(t * 1.1 + seed)
+    const h = r * (lord ? 1.24 : 1.0)
+    const w = r * (lord ? 0.5 : 0.46)
+    const sway = 0.03 * Math.sin(t * 1.15 + seed)
+    const bob = 0.012 * h * Math.sin(t * 1.9 + seed * 0.7)
+    const lean = (hash2(seed, 3) - 0.5) * 0.06 + sway
+    // 执刀手：右手为主手，刀锋角度随 id 与 aggro 变（越近抬得越高）
+    const bladeAngle = 0.5 + 0.35 * hash2(seed, 9) - 0.55 * aggro
 
-    // 墨气：身周一层极淡的晕
+    // 墨气
     ctx.globalAlpha = alpha
-    const haze = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.6)
+    const haze = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.35)
     haze.addColorStop(0, 'rgba(55,50,42,0.1)')
     haze.addColorStop(0.65, 'rgba(55,50,42,0.04)')
     haze.addColorStop(1, 'rgba(55,50,42,0)')
     ctx.fillStyle = haze
     ctx.beginPath()
-    ctx.ellipse(cx, cy, r * 1.6, h * 1.25, 0, 0, Math.PI * 2)
+    ctx.ellipse(cx, cy, r * 1.35, h * 1.3, 0, 0, Math.PI * 2)
     ctx.fill()
 
     ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate(sway * 0.3)
+    ctx.translate(cx, cy + bob)
+    ctx.rotate(lean * 0.5)
 
-    // 身后墨丝：往深处拖的三笔
+    // 身后墨丝（飘过来的两道）
     ctx.strokeStyle = ink
     ctx.lineCap = 'round'
-    for (let k = 0; k < 3; k += 1) {
-      const x0 = (hash2(seed + 30, k) - 0.5) * 1.2 * w
-      const len = h * (0.3 + 0.35 * hash2(seed + 31, k))
-      ctx.globalAlpha = alpha * (0.07 + 0.05 * hash2(seed + 32, k))
-      ctx.lineWidth = Math.max(1, r * (0.04 - k * 0.01))
+    for (let k = 0; k < 2; k += 1) {
+      const x0 = (hash2(seed + 30, k) - 0.5) * w * 1.6
+      const len = h * (0.35 + 0.35 * hash2(seed + 31, k))
+      ctx.globalAlpha = alpha * (0.08 + 0.05 * hash2(seed + 32, k))
+      ctx.lineWidth = Math.max(1, r * 0.03)
       ctx.beginPath()
-      ctx.moveTo(x0, -h * 0.5)
-      ctx.quadraticCurveTo(x0 + w * 0.4, -h * 0.95, x0 + w * 0.1, -h * 0.95 - len)
+      ctx.moveTo(x0, -h * 0.7)
+      ctx.quadraticCurveTo(x0 + w * 0.8, -h * 1.05, x0 + w * 0.2, -h * 1.1 - len)
       ctx.stroke()
     }
     ctx.globalAlpha = alpha
 
-    // 主体：一泼墨（略呈倒水滴），外缘再插几根墨刺
-    this.inkSplatPath(0, 0, w, h, seed, 7)
+    // ── 腿：前后错开的两条（长衫开衩，看得见腿）──
     ctx.fillStyle = ink
-    ctx.fill()
-    // 体积：沿纵向压一层由浅到深的墨（同一色相的明度变化，像墨在纸上的浓淡）
-    ctx.save()
-    this.inkSplatPath(0, 0, w, h, seed, 7)
-    ctx.clip()
-    const bodyShade = ctx.createLinearGradient(0, -h, 0, h * 1.1)
-    bodyShade.addColorStop(0, 'rgba(255,255,255,0.06)')
-    bodyShade.addColorStop(0.55, 'rgba(0,0,0,0)')
-    bodyShade.addColorStop(1, 'rgba(0,0,0,0.22)')
-    ctx.fillStyle = bodyShade
-    ctx.fillRect(-w * 1.4, -h * 1.4, w * 2.8, h * 3)
-    ctx.restore()
-
-    // 下摆：两道粗墨尾（右长左短）+ 一道中须——根部宽、末端收成笔尖，
-    // 别做成三根细刺（细刺读成蜘蛛腿）
-    for (let k = 0; k < 2; k += 1) {
-      const side = k === 0 ? 1 : -1
-      const sway2 = Math.sin(t * 1.3 + k * 2.4 + seed) * 0.06
-      const len = side > 0 ? 0.95 : 0.62
-      const x0 = side * w * 0.34
+    for (const side of [-1, 1]) {
+      const front = side > 0
+      const footX = side * w * (front ? 1.05 : 0.62)
+      const kneeX = side * w * (front ? 0.5 : 0.42)
       ctx.beginPath()
-      ctx.moveTo(x0 - w * 0.28, h * 0.3)
-      ctx.quadraticCurveTo(
-        x0 + w * (0.5 + sway2) * side,
-        h * (0.45 + len * 0.55),
-        x0 + w * (0.1 + sway2) * side,
-        h * (0.5 + len),
-      )
-      ctx.quadraticCurveTo(x0 + w * 0.06 * side, h * (0.45 + len * 0.5), x0 + w * 0.28, h * 0.3)
+      ctx.moveTo(side * w * 0.34, h * 0.12)
+      ctx.quadraticCurveTo(kneeX, h * 0.45, footX, h * 0.78)
+      ctx.lineTo(footX + side * w * 0.34, h * 0.84)
+      ctx.quadraticCurveTo(kneeX + side * w * 0.26, h * 0.42, side * w * 0.66, h * 0.08)
       ctx.closePath()
       ctx.fill()
     }
+
+    // ── 颈 + 头（圆而分明：先认「头」，才认得出是人）──
     ctx.beginPath()
-    ctx.moveTo(-w * 0.12, h * 0.42)
-    ctx.quadraticCurveTo(w * 0.04, h * 0.9, -w * 0.04, h * 1.1)
-    ctx.quadraticCurveTo(-w * 0.1, h * 0.8, -w * 0.12, h * 0.42)
+    ctx.moveTo(-w * 0.16, -h * 0.62)
+    ctx.lineTo(-w * 0.14, -h * 0.8)
+    ctx.lineTo(w * 0.14, -h * 0.8)
+    ctx.lineTo(w * 0.16, -h * 0.62)
+    ctx.closePath()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(0, -h * 0.94, w * 0.36, h * 0.19, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // ── 身体：肩 → 束腰 → 长衫（下摆撕三道）──
+    ctx.beginPath()
+    ctx.moveTo(-w * 0.2, -h * 0.8) // 左颈根
+    ctx.lineTo(-w * 0.95, -h * 0.52) // 左肩（略垂）
+    ctx.quadraticCurveTo(-w * 0.9, -h * 0.24, -w * 0.46, -h * 0.04) // 左肋到腰
+    ctx.quadraticCurveTo(-w * 0.72, h * 0.26, -w * 0.88, h * 0.5) // 左摆
+    ctx.lineTo(-w * 0.5, h * 0.4)
+    ctx.lineTo(-w * 0.26, h * 0.54)
+    ctx.lineTo(-w * 0.02, h * 0.4)
+    ctx.lineTo(w * 0.24, h * 0.54)
+    ctx.lineTo(w * 0.5, h * 0.4)
+    ctx.lineTo(w * 0.9, h * 0.52) // 右摆
+    ctx.quadraticCurveTo(w * 0.74, h * 0.26, w * 0.46, -h * 0.04) // 右肋到腰
+    ctx.quadraticCurveTo(w * 0.9, -h * 0.22, w * 0.95, -h * 0.52) // 右肩（略垂）
+    ctx.lineTo(w * 0.2, -h * 0.8)
     ctx.closePath()
     ctx.fill()
 
-    // 爪：左下三道短勾（只画一只，另一只藏在墨里）
-    ctx.strokeStyle = ink
-    for (let k = 0; k < 3; k += 1) {
-      ctx.globalAlpha = alpha * (0.55 + 0.15 * k)
-      ctx.lineWidth = Math.max(1, r * (0.032 - k * 0.006))
-      const bx = -w * (0.86 + k * 0.03)
-      const by = h * (0.06 + k * 0.13)
-      ctx.beginPath()
-      ctx.moveTo(bx, by)
-      ctx.quadraticCurveTo(bx - r * 0.1, by + r * 0.08, bx - r * 0.06, by + r * 0.2 + k * r * 0.02)
-      ctx.stroke()
-    }
-    ctx.globalAlpha = alpha
-
-    // 墨点飞溅：轮廓外几粒墨点
+    // 腰带：一道深墨（同色，靠明度差）
+    ctx.fillStyle = lord ? '#0d0b08' : 'rgba(20,17,13,0.85)'
+    ctx.beginPath()
+    ctx.moveTo(-w * 0.48, -h * 0.06)
+    ctx.lineTo(w * 0.48, -h * 0.06)
+    ctx.lineTo(w * 0.46, h * 0.06)
+    ctx.lineTo(-w * 0.46, h * 0.06)
+    ctx.closePath()
+    ctx.fill()
     ctx.fillStyle = ink
-    for (let k = 0; k < 5; k += 1) {
-      const angle = hash2(seed + 40, k) * Math.PI * 2
-      const dist = 1.15 + 0.5 * hash2(seed + 41, k)
-      const px = Math.cos(angle) * w * dist
-      const py = Math.sin(angle) * h * dist * 0.8
-      const size = r * (0.012 + 0.024 * hash2(seed + 42, k))
-      ctx.globalAlpha = alpha * (0.18 + 0.35 * hash2(seed + 43, k))
-      ctx.beginPath()
-      ctx.ellipse(px, py, size, size * 1.2, angle, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.globalAlpha = alpha
 
-    // ── 脸：一条纸面具横在上半身（不是一整张白脸）──
-    // 面具里两道**同向**的墨色细缝做眼：同一侧抬起才读作眼睛。
-    const faceY = -h * 0.52
+    // ── 左臂（垂在身侧）──
+    ctx.beginPath()
+    ctx.moveTo(-w * 0.86, -h * 0.54)
+    ctx.quadraticCurveTo(-w * 1.06, -h * 0.16, -w * 0.84, h * 0.16)
+    ctx.quadraticCurveTo(-w * 0.66, -h * 0.14, -w * 0.58, -h * 0.5)
+    ctx.closePath()
+    ctx.fill()
+
+    // ── 右臂：抬起横在胸前，手握刀 ──
+    const handX = w * 0.86
+    const handY = -h * (0.26 + 0.2 * aggro)
+    ctx.beginPath()
+    ctx.moveTo(w * 0.7, -h * 0.56)
+    ctx.quadraticCurveTo(w * 1.12, -h * 0.46, handX, handY)
+    ctx.quadraticCurveTo(w * 0.9, handY + h * 0.16, w * 0.62, -h * 0.2)
+    ctx.closePath()
+    ctx.fill()
+
+    // ── 刀：刀身有宽度、有护手，刃口一道纸色反光 ──
     ctx.save()
-    ctx.translate(0, faceY)
-    ctx.rotate(sway * 0.5 - 0.04)
-    const bandW = w * 0.34
-    const bandH = h * 0.092
+    ctx.translate(handX, handY)
+    ctx.rotate(bladeAngle - 0.75)
+    const bladeLen = h * (lord ? 1.5 : 1.15)
+    const bladeW = h * 0.055
+    // 护手
+    ctx.beginPath()
+    ctx.ellipse(0, 0, h * 0.06, h * 0.085, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // 刀身：自护手向外的细长四边，靠近刀尖收窄
+    ctx.beginPath()
+    ctx.moveTo(h * 0.05, -bladeW)
+    ctx.lineTo(bladeLen, -bladeW * 1.5)
+    ctx.lineTo(bladeLen, bladeW * 0.15)
+    ctx.lineTo(h * 0.05, bladeW)
+    ctx.closePath()
+    ctx.fill()
+    // 反光
+    ctx.strokeStyle = 'rgba(239,233,220,0.45)'
+    ctx.lineWidth = Math.max(0.8, h * 0.012)
+    ctx.beginPath()
+    ctx.moveTo(h * 0.14, -bladeW * 0.55)
+    ctx.lineTo(bladeLen * 0.92, -bladeW * 1.05)
+    ctx.stroke()
+    ctx.restore()
+
+    // ── 蒙面纸带：横遮双眼，随头微斜 ──
+    ctx.save()
+    ctx.translate(0, -h * 0.95)
+    ctx.rotate(sway * 0.6 - 0.04)
+    const bandW = w * 0.3
+    const bandH = h * 0.065
     ctx.fillStyle = PAPER
     ctx.beginPath()
-    ctx.moveTo(-bandW, -bandH * 0.75)
-    ctx.lineTo(bandW, -bandH * 1.1) // 上缘：右端略高（歪戴）
-    ctx.lineTo(bandW * 1.02, bandH * 0.85)
-    ctx.quadraticCurveTo(bandW * 0.5, bandH * 0.4, 0, bandH * 0.95) // 下缘：中间破一道
-    ctx.quadraticCurveTo(-bandW * 0.55, bandH * 0.45, -bandW * 0.98, bandH * 0.8)
+    ctx.moveTo(-bandW, -bandH)
+    ctx.quadraticCurveTo(0, -bandH * 1.35, bandW, -bandH * 1.05)
+    ctx.lineTo(bandW * 0.94, bandH * 0.8)
+    ctx.quadraticCurveTo(0, bandH * 1.2, -bandW * 0.94, bandH * 0.75)
     ctx.closePath()
     ctx.fill()
-    ctx.strokeStyle = 'rgba(20,17,13,0.28)'
-    ctx.lineWidth = Math.max(1, r * 0.012)
-    ctx.stroke()
-    // 眼缝（外端上挑）
-    ctx.strokeStyle = DEEP_INK
-    ctx.lineCap = 'round'
-    for (const side of [-1, 1]) {
-      ctx.lineWidth = Math.max(1.3, r * (0.028 + 0.012 * aggro))
-      ctx.beginPath()
-      ctx.moveTo(side * bandW * 0.15, bandH * 0.1)
-      ctx.lineTo(side * bandW * 0.6, bandH * (0.1 - 0.42 - 0.12 * aggro))
-      ctx.stroke()
-    }
-    if (lord) {
-      ctx.strokeStyle = BLOOD
-      ctx.lineWidth = Math.max(1.4, r * 0.028)
-      for (const side of [-1, 1]) {
-        ctx.beginPath()
-        ctx.moveTo(side * bandW * 0.72, -bandH * 0.9)
-        ctx.lineTo(side * bandW * 0.84, bandH * 0.8)
-        ctx.stroke()
-      }
-    }
     ctx.restore()
 
-    // ── 墨主：双角 + 腰间符纸 ──
+    // ── 墨主：宽斗笠 + 腰间朱砂带 ──
     if (lord) {
       ctx.fillStyle = '#14110d'
-      for (const side of [-1, 1]) {
-        ctx.beginPath()
-        ctx.moveTo(side * w * 0.16, -h * 0.86)
-        ctx.quadraticCurveTo(side * w * 0.62, -h * 1.06, side * w * 0.46, -h * 1.34)
-        ctx.quadraticCurveTo(side * w * 0.26, -h * 1.04, side * w * 0.02, -h * 0.9)
-        ctx.closePath()
-        ctx.fill()
-      }
-      ctx.save()
-      ctx.translate(w * 0.2, h * 0.28)
-      ctx.rotate(0.18)
-      ctx.fillStyle = PAPER
-      ctx.fillRect(-r * 0.085, 0, r * 0.17, r * 0.38)
-      ctx.fillStyle = BLOOD
-      ctx.fillRect(-r * 0.05, r * 0.07, r * 0.1, r * 0.026)
-      ctx.fillRect(-r * 0.05, r * 0.17, r * 0.1, r * 0.026)
-      ctx.restore()
+      ctx.beginPath()
+      ctx.moveTo(-w * 1.7, -h * 0.98)
+      ctx.quadraticCurveTo(0, -h * 1.05, w * 1.7, -h * 0.98)
+      ctx.quadraticCurveTo(0, -h * 1.62, -w * 1.7, -h * 0.98)
+      ctx.closePath()
+      ctx.fill()
+      ctx.strokeStyle = BLOOD
+      ctx.lineWidth = Math.max(1.6, r * 0.05)
+      ctx.beginPath()
+      ctx.moveTo(-w * 0.5, -h * 0.02)
+      ctx.lineTo(w * 0.5, -h * 0.02)
+      ctx.stroke()
     }
 
-    // 墨滴：下摆滴落的墨点（确定性相位）
+    // 墨滴：脚下滴落的墨点（确定性相位）
     for (let k = 0; k < 2; k += 1) {
       const phase = (t * 0.3 + hash2(seed + 21, k)) % 1
-      const dx = (k === 0 ? -0.2 : 0.24) * w
-      ctx.globalAlpha = alpha * (1 - phase) * 0.7
+      const dx = (k === 0 ? -0.5 : 0.55) * w
+      ctx.globalAlpha = alpha * (1 - phase) * 0.6
       ctx.fillStyle = ink
       ctx.beginPath()
-      ctx.ellipse(dx, h * (1.1 + phase * 0.45), r * 0.03, r * 0.06, 0, 0, Math.PI * 2)
+      ctx.ellipse(dx, h * (0.9 + phase * 0.3), r * 0.022, r * 0.045, 0, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.globalAlpha = alpha
     ctx.restore()
-  }
-
-  /**
-   * 一泼墨的轮廓：主体（略呈倒水滴）+ 外缘几根墨刺，整体是闭合路径。
-   * 全部半径由 seed 决定 → 同一只怪帧间同一形状；spikes 控制墨刺根数。
-   */
-  private inkSplatPath(cx: number, cy: number, w: number, h: number, seed: number, spikes: number): void {
-    const { ctx } = this
-    const n = 14
-    const points: { x: number; y: number }[] = []
-    for (let k = 0; k < n; k += 1) {
-      const angle = (k / n) * Math.PI * 2
-      const jitter = 0.86 + 0.26 * hash2(seed + 60, k)
-      // 上部收窄、下部散开：倒水滴的基本形
-      const taper = 1 - 0.18 * Math.sin(angle)
-      points.push({
-        x: cx + Math.cos(angle) * w * jitter * taper,
-        y: cy + Math.sin(angle) * h * jitter,
-      })
-    }
-    this.closedSmoothPath(points)
-
-    // 墨刺：自外缘向外插出的细三角（先画，后面被主体盖住根部）
-    for (let k = 0; k < spikes; k += 1) {
-      const angle = Math.PI * (0.15 + 0.7 * hash2(seed + 70, k)) + (k % 2 === 0 ? 0 : Math.PI)
-      const len = (0.18 + 0.42 * hash2(seed + 71, k)) * (k % 3 === 0 ? 1.5 : 1)
-      const baseR = 0.94
-      const bx = cx + Math.cos(angle) * w * baseR
-      const by = cy + Math.sin(angle) * h * baseR
-      const tx = bx + Math.cos(angle) * w * len
-      const ty = by + Math.sin(angle) * h * len
-      const nx = -Math.sin(angle)
-      const ny = Math.cos(angle)
-      const half = w * (0.06 + 0.05 * hash2(seed + 72, k))
-      ctx.moveTo(bx + nx * half, by + ny * half)
-      ctx.quadraticCurveTo(tx + nx * half * 0.2, ty + ny * half * 0.2, tx, ty)
-      ctx.quadraticCurveTo(tx - nx * half * 0.2, ty - ny * half * 0.2, bx - nx * half, by - ny * half)
-      ctx.closePath()
-    }
   }
 
   /** 程序绘制墨色剪影（帧间确定性轮廓 + 极慢呼吸；tAnim 供顿帧冻结呼吸） */
@@ -1387,34 +1349,7 @@ export class Renderer {
     ctx.globalAlpha = 1
   }
 
-  /** 不规则墨团轮廓：hash 噪声扰动的水墨边缘（与墨妖剪影同族的确定性形状） */
-  /**
-   * 闭合平滑曲线：点集 → 以中点为锚的二次曲线环。
-   * 墨团/躯体用它画——逐点直线连出来的多边形读作"石头"，曲线才读作"墨"。
-   */
-  private closedSmoothPath(points: readonly { x: number; y: number }[]): void {
-    const { ctx } = this
-    const n = points.length
-    const mid = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
-      x: (a.x + b.x) / 2,
-      y: (a.y + b.y) / 2,
-    })
-    const start = mid(points[n - 1]!, points[0]!)
-    ctx.beginPath()
-    ctx.moveTo(start.x, start.y)
-    for (let i = 0; i < n; i += 1) {
-      const cur = points[i]!
-      const next = points[(i + 1) % n]!
-      const m = mid(cur, next)
-      ctx.quadraticCurveTo(cur.x, cur.y, m.x, m.y)
-    }
-    ctx.closePath()
-  }
-
-  /**
-   * 一坨墨：半径带确定性扰动的平滑墨团（squash 纵向压缩、rough 扰动幅度）。
-   * 扰动来自 hash2(seed, k)，同一只怪每帧同一形状，只有 breathe 分量在动。
-   */
+  /** 不规则墨团轮廓：hash 噪声扰动的水墨边缘（余韵墨晕、击杀泼墨共用） */
   private inkBlob(cx: number, cy: number, r: number, seed: number, squish: number): void {
     const { ctx } = this
     ctx.beginPath()
