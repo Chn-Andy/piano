@@ -66,6 +66,18 @@ export interface QinxinFeedback {
   readonly index: number
 }
 
+/** 墨妖/墨主的动作参数（工单 13）：形貌之外的「动」全部由这几个数驱动 */
+export interface MonsterAnim {
+  /** 0 = 站定（已到琴阵），1 = 正在推进 */
+  readonly moving: number
+  /** 步态相位 0..1（推进时腿部交替迈步） */
+  readonly step: number
+  /** 举刀前摇 0..1（1 = 刀已举到最高，下一口咬击即将落下） */
+  readonly windup: number
+  /** 挥砍跟随 0..1（1 = 刚劈下，纸色刀光最亮） */
+  readonly slash: number
+}
+
 export interface RenderModel {
   readonly chart: Chart
   /** 谱面键位布局（钢琴序，含物理键与黑白键标记） */
@@ -637,19 +649,19 @@ export class Renderer {
   }
 
   /**
-   * 墨妖/墨主的形貌（工单 12/13，ADR-0005 水墨方向）。
+   * 墨妖/墨主的形貌（工单 12/13，ADR-0005 水墨方向）：**墨色刺客**，会走、会挥刀。
    *
-   * 形：**墨色刺客**——斗笠/兜帽、蒙面、执刀的瘦削人形。
-   * 用户反馈「看不出这是人」之后整版重做：之前那套墨团+墨刺是「怪物」，
-   * 但《心琴》的幻想是「你弹琴，刺客循声来杀你」——所以必须读得出人形：
-   * 圆的头、细的颈、展开的肩、束起的腰、分开的腿，还有一把刀。
+   * 形：斗笠/兜帽、蒙面、执刀的瘦削人形；比例：身高 2.0h、肩 0.95w、腰 0.46w、
+   * 头半径 0.36w（h = r，w = 0.46r）。墨主高 1.24 倍、宽斗笠、长刀、朱砂腰带。
    *
-   * 比例（以 r 为半径、h = r）：身高 2.0h（脚 +0.9h、头顶 −1.1h），
-   * 肩宽 0.95w、腰 0.42w、下摆 0.85w、头半径 0.17h——瘦高才像刺客。
-   * 墨主：高 1.24 倍、宽斗笠、更长的刀、腰间一道朱砂带。
+   * 动（工单 13，用户的意见：「要真的在攻击我，不是一张图纸」）：
+   * - **走**：推进时双腿交替、身体随之起伏，肩与刀轻摆（相位 = t × 步频）；
+   * - **站定**：到琴阵后收成弓步，呼吸更慢；
+   * - **举刀—挥砍**：距下一口咬击 < 0.34s 时刀缓缓抬起（前摇），咬中那一刻刀劈下，
+   *   并甩出一道纸色刀光（跟随 0.24s）——玩家在掉血**之前**就看见他要动手。
    *
-   * 全部姿态由 id 派生的确定性噪声 + 极慢摇摆决定：同一只怪每帧同一副姿态。
-   * aggro ∈ [0,1]：越贴琴阵，刀抬得越高（要砍你了）。
+   * 全部姿态由 id 派生的确定性噪声 + 时间相位决定：同一只怪每帧可复现。
+   * aggro ∈ [0,1]：越贴琴阵越凶（刀抬得更高、身更前倾）。
    */
   private drawGhoul(
     monster: MonsterView,
@@ -660,17 +672,23 @@ export class Renderer {
     lord: boolean,
     alpha: number,
     aggro: number,
+    anim: MonsterAnim,
   ): void {
     const { ctx } = this
     const seed = monster.id * 13 + (lord ? 97 : 0)
     const ink = lord ? '#14110d' : INK
     const h = r * (lord ? 1.24 : 1.0)
     const w = r * (lord ? 0.5 : 0.46)
-    const sway = 0.03 * Math.sin(t * 1.15 + seed)
-    const bob = 0.012 * h * Math.sin(t * 1.9 + seed * 0.7)
-    const lean = (hash2(seed, 3) - 0.5) * 0.06 + sway
-    // 执刀手：右手为主手，刀锋角度随 id 与 aggro 变（越近抬得越高）
-    const bladeAngle = 0.5 + 0.35 * hash2(seed, 9) - 0.55 * aggro
+
+    // ── 步态 ──
+    const swing = Math.sin(anim.step * Math.PI * 2) * anim.moving
+    const bob = -Math.abs(swing) * 0.035 * h - 0.008 * h * Math.sin(t * 1.9 + seed)
+    const sway = 0.03 * Math.sin(t * 1.15 + seed) + swing * 0.02
+    const lean = (hash2(seed, 3) - 0.5) * 0.06 + sway + anim.moving * 0.05
+    // 刀：基础角 + 前摇抬起 + 挥砍下劈
+    const baseBlade = 0.5 + 0.35 * hash2(seed, 9) - 0.5 * aggro
+    const bladeAngle = baseBlade - 0.7 * anim.windup + 1.25 * anim.slash
+    const handLift = -h * (0.26 + 0.2 * aggro - 0.14 * anim.windup + 0.1 * anim.slash)
 
     // 墨气
     ctx.globalAlpha = alpha
@@ -693,26 +711,29 @@ export class Renderer {
     for (let k = 0; k < 2; k += 1) {
       const x0 = (hash2(seed + 30, k) - 0.5) * w * 1.6
       const len = h * (0.35 + 0.35 * hash2(seed + 31, k))
+      const flutter = Math.sin(t * 2.1 + k * 1.7 + seed) * w * 0.35
       ctx.globalAlpha = alpha * (0.08 + 0.05 * hash2(seed + 32, k))
       ctx.lineWidth = Math.max(1, r * 0.03)
       ctx.beginPath()
       ctx.moveTo(x0, -h * 0.7)
-      ctx.quadraticCurveTo(x0 + w * 0.8, -h * 1.05, x0 + w * 0.2, -h * 1.1 - len)
+      ctx.quadraticCurveTo(x0 + w * 0.8 + flutter, -h * 1.05, x0 + w * 0.2 + flutter * 1.4, -h * 1.1 - len)
       ctx.stroke()
     }
     ctx.globalAlpha = alpha
 
-    // ── 腿：前后错开的两条（长衫开衩，看得见腿）──
+    // ── 腿：推进会交替迈步（相位驱动），站定时收成弓步 ──
     ctx.fillStyle = ink
     for (const side of [-1, 1]) {
       const front = side > 0
-      const footX = side * w * (front ? 1.05 : 0.62)
-      const kneeX = side * w * (front ? 0.5 : 0.42)
+      const stepOut = (front ? swing : -swing) * 0.22 * h
+      const footX = side * w * (front ? 1.05 : 0.62) + stepOut
+      const lift = Math.max(0, front ? swing : -swing) * 0.16 * h
+      const kneeX = side * w * (front ? 0.5 : 0.42) + stepOut * 0.4
       ctx.beginPath()
       ctx.moveTo(side * w * 0.34, h * 0.12)
-      ctx.quadraticCurveTo(kneeX, h * 0.45, footX, h * 0.78)
-      ctx.lineTo(footX + side * w * 0.34, h * 0.84)
-      ctx.quadraticCurveTo(kneeX + side * w * 0.26, h * 0.42, side * w * 0.66, h * 0.08)
+      ctx.quadraticCurveTo(kneeX, h * 0.45 - lift * 0.5, footX, h * 0.78 - lift)
+      ctx.lineTo(footX + side * w * 0.34, h * 0.84 - lift)
+      ctx.quadraticCurveTo(kneeX + side * w * 0.26, h * 0.42 - lift * 0.5, side * w * 0.66, h * 0.08)
       ctx.closePath()
       ctx.fill()
     }
@@ -726,28 +747,28 @@ export class Renderer {
     ctx.closePath()
     ctx.fill()
     ctx.beginPath()
-    ctx.ellipse(0, -h * 0.94, w * 0.36, h * 0.19, 0, 0, Math.PI * 2)
+    ctx.ellipse(swing * w * 0.05, -h * 0.94, w * 0.36, h * 0.19, 0, 0, Math.PI * 2)
     ctx.fill()
 
     // ── 身体：肩 → 束腰 → 长衫（下摆撕三道）──
     ctx.beginPath()
-    ctx.moveTo(-w * 0.2, -h * 0.8) // 左颈根
-    ctx.lineTo(-w * 0.95, -h * 0.52) // 左肩（略垂）
-    ctx.quadraticCurveTo(-w * 0.9, -h * 0.24, -w * 0.46, -h * 0.04) // 左肋到腰
-    ctx.quadraticCurveTo(-w * 0.72, h * 0.26, -w * 0.88, h * 0.5) // 左摆
+    ctx.moveTo(-w * 0.2, -h * 0.8)
+    ctx.lineTo(-w * 0.82, -h * 0.5)
+    ctx.quadraticCurveTo(-w * 0.9, -h * 0.24, -w * 0.46, -h * 0.04)
+    ctx.quadraticCurveTo(-w * 0.72, h * 0.26, -w * 0.88, h * 0.5)
     ctx.lineTo(-w * 0.5, h * 0.4)
     ctx.lineTo(-w * 0.26, h * 0.54)
     ctx.lineTo(-w * 0.02, h * 0.4)
     ctx.lineTo(w * 0.24, h * 0.54)
     ctx.lineTo(w * 0.5, h * 0.4)
-    ctx.lineTo(w * 0.9, h * 0.52) // 右摆
-    ctx.quadraticCurveTo(w * 0.74, h * 0.26, w * 0.46, -h * 0.04) // 右肋到腰
-    ctx.quadraticCurveTo(w * 0.9, -h * 0.22, w * 0.95, -h * 0.52) // 右肩（略垂）
+    ctx.lineTo(w * 0.9, h * 0.52)
+    ctx.quadraticCurveTo(w * 0.74, h * 0.26, w * 0.46, -h * 0.04)
+    ctx.quadraticCurveTo(w * 0.78, -h * 0.22, w * 0.82, -h * 0.5)
     ctx.lineTo(w * 0.2, -h * 0.8)
     ctx.closePath()
     ctx.fill()
 
-    // 腰带：一道深墨（同色，靠明度差）
+    // 腰带：一道深墨
     ctx.fillStyle = lord ? '#0d0b08' : 'rgba(20,17,13,0.85)'
     ctx.beginPath()
     ctx.moveTo(-w * 0.48, -h * 0.06)
@@ -758,35 +779,34 @@ export class Renderer {
     ctx.fill()
     ctx.fillStyle = ink
 
-    // ── 左臂（垂在身侧）──
+    // ── 左臂（垂在身侧，随步伐轻摆）──
+    const armSwing = swing * 0.12 * h
     ctx.beginPath()
     ctx.moveTo(-w * 0.86, -h * 0.54)
-    ctx.quadraticCurveTo(-w * 1.06, -h * 0.16, -w * 0.84, h * 0.16)
+    ctx.quadraticCurveTo(-w * 1.16 - armSwing, -h * 0.14, -w * 0.96 - armSwing, h * 0.18)
     ctx.quadraticCurveTo(-w * 0.66, -h * 0.14, -w * 0.58, -h * 0.5)
     ctx.closePath()
     ctx.fill()
 
-    // ── 右臂：抬起横在胸前，手握刀 ──
-    const handX = w * 0.86
-    const handY = -h * (0.26 + 0.2 * aggro)
+    // ── 右臂：横在胸前握刀（前摇抬手 / 挥砍压手）──
+    const handX = w * (1.28 + 0.1 * anim.windup)
+    const handY = handLift
     ctx.beginPath()
     ctx.moveTo(w * 0.7, -h * 0.56)
-    ctx.quadraticCurveTo(w * 1.12, -h * 0.46, handX, handY)
+    ctx.quadraticCurveTo(w * 1.2, -h * 0.5 - 0.12 * h * anim.windup, handX, handY)
     ctx.quadraticCurveTo(w * 0.9, handY + h * 0.16, w * 0.62, -h * 0.2)
     ctx.closePath()
     ctx.fill()
 
-    // ── 刀：刀身有宽度、有护手，刃口一道纸色反光 ──
+    // ── 刀：前摇抬起、挥砍劈下；刃口一道纸色反光；劈下的瞬间甩出刀光 ──
     ctx.save()
     ctx.translate(handX, handY)
     ctx.rotate(bladeAngle - 0.75)
     const bladeLen = h * (lord ? 1.5 : 1.15)
     const bladeW = h * 0.055
-    // 护手
     ctx.beginPath()
     ctx.ellipse(0, 0, h * 0.06, h * 0.085, 0, 0, Math.PI * 2)
     ctx.fill()
-    // 刀身：自护手向外的细长四边，靠近刀尖收窄
     ctx.beginPath()
     ctx.moveTo(h * 0.05, -bladeW)
     ctx.lineTo(bladeLen, -bladeW * 1.5)
@@ -794,18 +814,24 @@ export class Renderer {
     ctx.lineTo(h * 0.05, bladeW)
     ctx.closePath()
     ctx.fill()
-    // 反光
     ctx.strokeStyle = 'rgba(239,233,220,0.45)'
     ctx.lineWidth = Math.max(0.8, h * 0.012)
     ctx.beginPath()
     ctx.moveTo(h * 0.14, -bladeW * 0.55)
     ctx.lineTo(bladeLen * 0.92, -bladeW * 1.05)
     ctx.stroke()
+    if (anim.slash > 0.01) {
+      ctx.strokeStyle = 'rgba(239,233,220,0.7)'
+      ctx.lineWidth = Math.max(1.2, h * (0.03 + 0.02 * anim.slash))
+      ctx.beginPath()
+      ctx.arc(0, 0, bladeLen * 0.86, -1.15, 0.35 + 0.5 * (1 - anim.slash))
+      ctx.stroke()
+    }
     ctx.restore()
 
     // ── 蒙面纸带：横遮双眼，随头微斜 ──
     ctx.save()
-    ctx.translate(0, -h * 0.95)
+    ctx.translate(swing * w * 0.05, -h * 0.94)
     ctx.rotate(sway * 0.6 - 0.04)
     const bandW = w * 0.3
     const bandH = h * 0.065
@@ -849,7 +875,6 @@ export class Renderer {
     ctx.globalAlpha = alpha
     ctx.restore()
   }
-
   /** 程序绘制墨色剪影（帧间确定性轮廓 + 极慢呼吸；tAnim 供顿帧冻结呼吸） */
   private drawMonster(
     m: RenderModel,
@@ -896,13 +921,31 @@ export class Renderer {
     ctx.save()
     ctx.globalAlpha = alpha
 
-    // 形貌（工单 12 重做，ADR-0005 水墨方向）：一具刚凝成人形的墨。
-    // aggro 用纵深换算——越靠近琴阵越狰狞（眼张、口开），远处只是一个墨影。
+    // 形貌（工单 12/13，ADR-0005 水墨方向）：一具会走、会挥刀的墨色刺客。
+    // aggro 用纵深换算——越靠近琴阵越凶；动作参数见 MonsterAnim。
     const depthRatio = Math.max(
       0,
       Math.min(1, depthAt(monster.spawnAt, m.t, monster.holdBack) / BATTLEFIELD.SPAWN_DEPTH),
     )
-    this.drawGhoul(monster, cx, cy, r, t, lord, alpha, 1 - depthRatio)
+    // 步态：推进时双腿交替；到琴阵后 moving → 0，收成弓步只余呼吸
+    const moving = Math.min(1, depthRatio * 8)
+    const step = (t * 1.7 + hash2(monster.id, 5)) % 1
+    // 前摇：距下一口咬击 0.34 秒内缓缓举刀（nextBiteAt 由模拟器排出）
+    const untilBite = monster.nextBiteAt - m.t
+    const windup = Math.max(0, Math.min(1, (0.34 - untilBite) / 0.34))
+    // 挥砍跟随：咬中后的 0.24 秒内刀已劈下、刀光最亮
+    let slash = 0
+    for (const bite of m.bites) {
+      if (bite.monsterId !== monster.id) continue
+      const age = m.t - bite.at
+      if (age >= 0 && age <= 0.24) slash = Math.max(slash, 1 - age / 0.24)
+    }
+    this.drawGhoul(monster, cx, cy, r, t, lord, alpha, 1 - depthRatio, {
+      moving,
+      step,
+      windup: untilBite > 0.42 ? 0 : windup,
+      slash,
+    })
 
     // 寒音减速：青霜环（减速持续期内可见，余光读作「冻住了」）
     if (monster.slowedUntil !== null && m.t < monster.slowedUntil) {

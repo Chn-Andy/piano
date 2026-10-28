@@ -37,3 +37,5 @@
 5. 姿态随机但稳定：`hash2(id)` 决定歪斜、刀的初始角度；`aggro = 1 − 纵深比` 决定刀抬多高。
 
 体积：约 230 行，无新增素材/依赖；产物 137.4 KB。截图：[docs/screenshots/墨潮·纵深.png](../../../docs/screenshots/墨潮·纵深.png)。
+
+**后续**：动作（走 / 举刀 / 挥砍）见 [13-monster-animation.md](13-monster-animation.md)。

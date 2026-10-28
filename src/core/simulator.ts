@@ -219,6 +219,11 @@ export interface MonsterView {
   readonly slowedUntil: number | null
   /** 中毒状态的可见截止时刻；null = 未中毒 */
   readonly poisonUntil: number | null
+  /**
+   * 下一口咬击的确定时刻（工单 13）：渲染层据此做「举刀—挥砍」的前摇动画，
+   * 让玩家在掉血**之前**就看见刺客要动手。
+   */
+  readonly nextBiteAt: number
 }
 
 /** 构造选项：出场计划默认由谱面推导（combat.planMonsters），可注入定制 */
@@ -374,6 +379,7 @@ export class Simulator {
       holdBack: m.holdBack,
       slowedUntil: m.slowedUntil > 0 ? m.slowedUntil : null,
       poisonUntil: m.poison === null ? null : m.poison.at + TINT_EFFECTS.toxic.POISON_SECONDS,
+      nextBiteAt: m.nextBiteAt,
     }))
   }
 
