@@ -176,4 +176,4 @@
 3. **真实设备人工验收**（本票第 4 条，**待用户试玩**）：整首游玩，重点感受——判定手感是否公平（不准先调偏移再议窗口）、命中剑气声是否吵、两轨音量配比、和弦重击的分量、终章印章落点。有人工证据再动数值，并把调整理由记进对应表行。
 4. **定标性质回归**（改任何战斗常量后必跑）：`npx vitest run src/core/combat.test.ts`——三曲 × 三难度 × 三玩家模型 36 项性质（完美/认真全胜、普通全败、静置被咬空）。这是数值改动的红线，红了就说明某个玩家模型被破坏。
 5. **浏览器整局链路**：`?auto=perfect`（应当胜、结算显示琴心次数）与 `?auto=idle`（应当败于咬空）各跑一局，读数经 `window.__xq` 读取（`perfect/good/miss/playerHp/monstersAlive/bites/tintCold/tintToxic/tintBlast/poisonTicks/qinxinGauge/qinxinReleases`）。
-6. 全量测试 + `npm run build` 必须绿；v1.1 基线为 **221 项测试**（v1 为 153、08 号票后 172、09 号票后 189）。
+6. 全量测试 + `npm run build` 必须绿；v1.1 基线为 **222 项测试**（v1 为 153、08 号票后 172、09 号票后 189、12 号票后 222）。

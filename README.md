@@ -13,7 +13,7 @@ v1.1：墨妖成群推进到琴阵（守线制）、异色音符（寒/毒/爆�
 ```bash
 npm install
 npm run dev        # 开发服务器；打开后点击或按任意键开始（浏览器要求用户手势后才能发声）
-npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.1 基线 221 项）
+npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.1 基线 222 项）
 npm run build      # 类型检查 + 产物输出到 dist/（相对路径 base，任意静态托管可直接部署）
 npm run preview    # 本地预览构建产物
 npm run charts     # 从公版 MIDI fixture 重新生成三难度谱面 JSON（src/charts/）
@@ -35,20 +35,18 @@ v1.1 的战斗：墨妖成群自战场深处向**琴阵**推进，miss 只让剑
 开发验证钩子（URL 查询参数，普通玩家不受影响）：`?auto=perfect`（按谱面时刻
 自动完美弹奏）、`?auto=idle`（静置验败局）、`?song=<id>`、`?chart=easy|medium|hard`。
 
-## 发布步骤（本机无 gh CLI / 无凭据，按网页操作）
+## 发布步骤（本地工作分支 `main`，一份静态产物双平台）
 
 ### GitHub Pages
 
 1. **建仓**：github.com 网页上 New repository（例如 `piano`，Public，不要初始化 README）。
-2. **推送**：工作分支是 `xinqin-v1`（`main` 不在本机），推成远端的 `main` 即可
-   （替换 `<用户名>/<仓库名>`）：
+2. **推送**：本地工作分支就是 `main`，直接推上远端 `main`（替换 `<用户名>/<仓库名>`）：
    ```bash
-   git remote add origin git@github.com:<用户名>/<仓库名>.git   # 或 https://github.com/<用户名>/<仓库名>.git
-   git push -u origin xinqin-v1:main
+   git remote add origin https://github.com:<用户名>/<仓库名>.git   # 或 git@github.com:<用户名>/<仓库名>.git
+   git push -u origin main
    ```
    推送 `main` 会触发 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)：
-   测试 → 构建 → 部署（全部官方 actions）。之后本地再更新，仍是
-   `git push origin xinqin-v1:main`。
+   测试 → 构建 → 部署（全部官方 actions）。之后本地再更新，仍是 `git push origin main`。
 3. **启用 Pages**：仓库网页 Settings → Pages → Build and deployment →
    Source 选 **GitHub Actions**（不是 Deploy from a branch）。保存后等 workflow 跑绿。
 4. **游玩地址**：`https://<用户名>.github.io/<仓库名>/`（产物为相对路径 base，
