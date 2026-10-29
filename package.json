@@ -9,7 +9,7 @@
     "test": "vitest run",
     "charts": "tsx scripts/generate-charts.ts",
     "preview": "vite preview",
-    "pack:itch": "npm run build && rm -f xinqin-itch.zip && cd dist && zip -qr ../xinqin-itch.zip ."
+    "pack:itch": "npm run build && node scripts/pack-itch.mjs"
   },
   "devDependencies": {
     "@tonejs/midi": "^2.0.28",

@@ -13,7 +13,7 @@ v1.1：墨妖成群推进到琴阵（守线制）、异色音符（寒/毒/爆�
 ```bash
 npm install
 npm run dev        # 开发服务器；打开后点击或按任意键开始（浏览器要求用户手势后才能发声）
-npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.1 基线 222 项）
+npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.2 基线 224 项）
 npm run build      # 类型检查 + 产物输出到 dist/（相对路径 base，任意静态托管可直接部署）
 npm run preview    # 本地预览构建产物
 npm run charts     # 从公版 MIDI fixture 重新生成三难度谱面 JSON（src/charts/）

@@ -157,6 +157,34 @@ describe('墨潮生成（波次 × 群落，末波墨主压轴）', () => {
     expect(lord.hp).toBeLessThanOrEqual(Math.ceil(finaleBudget * HORDE_PLAN.LORD_HP_FRACTION))
   })
 
+  it('墨主抵阵不晚于终章乐句开始（末波短于一个行程时提前登场）', () => {
+    // 中等波宽 28s；末波只有 6 秒（35 - 29 < TRAVEL_SECONDS），按波首登场
+    // 会让墨主只在末尾几颗音符里承伤——一颗失误就斩不下、歌毕留怪判负。
+    const notes = Array.from({ length: 35 }, (_, i) => [1 + i, i % 5] as const)
+    const phrases = [
+      { id: 0, start: 1, end: 29, sustainStart: 29, sustainEnd: 29.6 },
+      { id: 1, start: 30, end: 35, sustainStart: 35, sustainEnd: 35.6 },
+    ]
+    const chart = chartWithDifficulty('medium', notes, phrases)
+    const lord = planMonsters(chart).find((m) => m.kind === 'inkLord')!
+
+    expect(arrivalTimeAt(lord.spawnAt), '抵阵不晚于终章开始').toBeLessThanOrEqual(30 + 1e-9)
+    expect(lord.spawnAt, '不早于首音符').toBeGreaterThanOrEqual(1)
+  })
+
+  it('墨妖厚度按难度分档：简单最薄（同一条音符时间轴上的单妖 HP 最小）', () => {
+    // 同一时间轴（20 秒内每 0.5 秒一音），各难度都只够一波 → 单妖承同一份波预算
+    const pairs = Array.from({ length: 40 }, (_, i) => [1 + i * 0.5, i % 5] as const)
+    const hpOf = (difficulty: DifficultyName): number =>
+      planMonsters(chartWithDifficulty(difficulty, pairs)).find((m) => m.kind === 'inkDemon')!.hp
+
+    const easy = hpOf('easy')
+    expect(easy).toBeLessThan(hpOf('medium'))
+    expect(easy).toBeLessThan(hpOf('hard'))
+    expect(HORDE_PLAN.DEMON_HP_FRACTION.easy).toBeLessThan(HORDE_PLAN.DEMON_HP_FRACTION.medium)
+    expect(easy / hpOf('medium'), '简单薄于中等（比例上的关系，不钉具体数值）').toBeLessThan(0.9)
+  })
+
   it('短谱（不足两波）只有一群墨妖，不生成墨主；空谱无计划', () => {
     const short = planMonsters(pacedChart('medium', 2, 8))
     expect(short.every((m) => m.kind === 'inkDemon')).toBe(true)

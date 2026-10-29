@@ -111,6 +111,7 @@ export function planMonsters(chart: Chart): readonly MonsterPlan[] {
   const difficulty = chart.meta?.difficulty ?? 'medium'
   const waveWidth = HORDE_PLAN.WAVE_SECONDS[difficulty]
   const groupSize = HORDE_PLAN.GROUP_SIZE[difficulty]
+  const hpFraction = HORDE_PLAN.DEMON_HP_FRACTION[difficulty]
 
   // 波界：自首音符起按波宽推进，末波收在末音符（与 v1 分段同构）
   const first = notes[0]!.time
@@ -139,10 +140,18 @@ export function planMonsters(chart: Chart): readonly MonsterPlan[] {
       const budgetNotes = finaleNotes > 0 ? finaleNotes : waveNotes(notes, waveStart, waveEnd)
       const fraction =
         finaleNotes > 0 ? HORDE_PLAN.LORD_HP_FRACTION : HORDE_PLAN.LORD_WAVE_FALLBACK_FRACTION
+      // 抵阵不晚于终章乐句开始：墨主要能在整个终章里挨打。末波若短于
+      // 一个行程（春江简单末波只有 7 秒），按波首登场会让它只在末尾几颗
+      // 音符里承伤——斩不下就歌毕留怪判负，一颗失误即翻盘。
+      // 无乐句谱面（测试与边界谱面）没有终章可对齐，维持末波波首登场。
+      const spawnAt =
+        finale === undefined
+          ? waveStart
+          : Math.max(first, Math.min(waveStart, finale.start - BATTLEFIELD.TRAVEL_SECONDS))
       plans.push({
         id: id,
         kind: 'inkLord',
-        spawnAt: waveStart,
+        spawnAt,
         hp: Math.max(1, Math.round(budgetNotes * perNote * fraction)),
       })
       id += 1
@@ -153,7 +162,7 @@ export function planMonsters(chart: Chart): readonly MonsterPlan[] {
         id: id,
         kind: 'inkDemon',
         spawnAt: waveStart + member * HORDE_PLAN.GROUP_STAGGER_SECONDS,
-        hp: Math.max(1, Math.round(waveNotes(notes, waveStart, waveEnd) * perNote * HORDE_PLAN.DEMON_HP_FRACTION)),
+        hp: Math.max(1, Math.round(waveNotes(notes, waveStart, waveEnd) * perNote * hpFraction)),
       })
       id += 1
     }
