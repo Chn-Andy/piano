@@ -64,3 +64,12 @@
 - 容错表：`npx tsx <scratch>/tolerance-real.ts`（每 n 颗失手一颗，扫 n = 3…33，取最大可胜失手率）
 - 红线：`npm test`（`src/core/combat.test.ts` 的 36 项定标性质）
 - 新增钉子：`墨主抵阵不晚于终章乐句开始`、`墨妖厚度按难度分档：简单最薄`
+
+**2026-10-29 · 发布（v1.2）**：一份静态产物双平台同步更新。
+
+| 渠道 | 事实（回读所得） |
+|---|---|
+| 代码 | `main` = `af8d4ca`，推 Gitea `origin/main` 与 GitHub `Chn-Andy/piano` 均成功 |
+| GitHub Pages | workflow run 40845330781 `completed success`；线上 `assets/index-KitVZeXK.js`（137,448 字节）与本地构建同名同字节；浏览器实跑（`?auto=perfect&song=fur-elise&chart=easy`）进入 playing、判定/怪物正常，全部资源取自 `chn-andy.github.io` |
+| itch.io | butler 推 channel `html5`，build **✓ #2242034**（from #2241422），version `1.2.0`，包 1.03 MiB / 7 文件；嵌入地址 `html-classic.itch.zone/html/20119642-2242034/index.html` 引用的正是 `index-KitVZeXK.js`，直接打开该嵌入页实跑同一条 URL 能进入 playing |
+| 未验证 | 未在 itch 页面的**交叉域 iframe 内**做完整一局（跨域不可脚本化），只验证了同一份嵌入产物以顶层页面运行时正常 |
