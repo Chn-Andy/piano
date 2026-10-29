@@ -1,6 +1,7 @@
 /**
  * Canvas 2D 渲染壳：只消费模拟器的公开状态，不含任何游戏逻辑。
- * 水墨纸面风格（ADR-0005）：
+ * 水墨纸面风格（ADR-0005）：纸纹、枯笔、下落拖墨与菜单是同一张宣纸，
+ * 不另起一套扁平 UI 材质。
  * - 上半区：斗琴战场——墨妖成群自深处向琴阵推进（工单 08，纵深排布
  *   近大远小、咬线突进、AoE 剑气扫场墨浪、扑空斜笔）；重击/击杀的
  *   受击顿帧（战场一瞬冻结，音符流绝不同冻）、墨主登场落位、墨主死亡
@@ -164,6 +165,8 @@ const TIER_SHOW = [
 const FINALE_SHOW = { label: '终章', particles: 180, wash: 0.52, arcs: 7, labelSize: 82 }
 
 const PAPER = '#efe9dc'
+/** 纸色高光：刃口、音符湿边，与纸面同色 */
+const PAPER_SHEEN = 'rgba(239,233,220,0.45)'
 const INK = '#37322a'
 const DEEP_INK = '#1d1a15'
 const FAINT_INK = 'rgba(55,50,42,0.10)'
@@ -233,6 +236,9 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D
   private cssW = 0
   private cssH = 0
+  /** 烘好的纸纹；尺寸或 dpr 变了才重绘，逐帧只贴图 */
+  private paperTex: HTMLCanvasElement | null = null
+  private paperKey = ''
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d')
@@ -264,13 +270,14 @@ export class Renderer {
     const judgeY = H * 0.8
     const zoneY = H * 0.5 // 战场 / 下落区分界
 
-    // 纸面
+    // 纸面：底色 + 一次性烘好的纸纹（纤维、远处淡青、四角收墨）
     ctx.fillStyle = PAPER
     ctx.fillRect(0, 0, W, H)
+    this.paintPaper(W, H)
 
     const geom = this.laneGeometry(m.layout, W)
 
-    this.drawField(m, geom, judgeY)
+    this.drawField(m, geom, judgeY, zoneY)
 
     // 终章震屏只作用于上半区演出（下落音符与 HUD 稳如磐石——节奏优先）
     const shake = this.finaleShake(m)
@@ -331,11 +338,62 @@ export class Renderer {
     return { lanes, fieldW, x0, whiteW }
   }
 
+  /**
+   * 宣纸纹理，尺寸变化时才烘焙：细纤维、战场上缘一抹远青、四角略收。
+   * 贴图按 CSS 像素绘制，主画布的 dpr 变换负责清晰度。
+   */
+  private paintPaper(w: number, h: number): void {
+    const dpr = window.devicePixelRatio || 1
+    const pw = Math.max(1, Math.round(w))
+    const ph = Math.max(1, Math.round(h))
+    const key = `${pw}x${ph}@${dpr}`
+    if (this.paperTex === null || this.paperKey !== key) {
+      const tex = document.createElement('canvas')
+      tex.width = Math.max(1, Math.round(pw * dpr))
+      tex.height = Math.max(1, Math.round(ph * dpr))
+      const g = tex.getContext('2d')
+      if (g !== null) {
+        g.setTransform(dpr, 0, 0, dpr, 0, 0)
+        const specks = Math.min(2400, Math.round((pw * ph) / 1800))
+        for (let i = 0; i < specks; i += 1) {
+          const x = hash2(i, 17) * pw
+          const y = hash2(i, 29) * ph
+          const a = 0.016 + hash2(i, 41) * 0.04
+          g.fillStyle = `rgba(55,50,42,${a.toFixed(3)})`
+          const fiber = hash2(i, 53) > 0.8
+          g.fillRect(x, y, fiber ? 0.6 : 1.2, fiber ? 2.2 : 0.8)
+        }
+        const sky = g.createLinearGradient(0, 0, 0, ph * 0.5)
+        sky.addColorStop(0, 'rgba(74,102,114,0.07)')
+        sky.addColorStop(0.55, 'rgba(74,102,114,0.02)')
+        sky.addColorStop(1, 'rgba(74,102,114,0)')
+        g.fillStyle = sky
+        g.fillRect(0, 0, pw, ph * 0.5)
+        const vig = g.createRadialGradient(
+          pw / 2,
+          ph * 0.62,
+          Math.min(pw, ph) * 0.18,
+          pw / 2,
+          ph * 0.58,
+          Math.max(pw, ph) * 0.72,
+        )
+        vig.addColorStop(0, 'rgba(48,38,26,0)')
+        vig.addColorStop(1, 'rgba(48,38,26,0.08)')
+        g.fillStyle = vig
+        g.fillRect(0, 0, pw, ph)
+      }
+      this.paperTex = tex
+      this.paperKey = key
+    }
+    this.ctx.drawImage(this.paperTex, 0, 0, w, h)
+  }
+
   /** 下落区（沿用 01 行为，几何随谱面键区扩展；余韵窗口内音符暂停下落） */
   private drawField(
     m: RenderModel,
     geom: { lanes: readonly LaneGeom[]; fieldW: number; x0: number },
     judgeY: number,
+    zoneY: number,
   ): void {
     const { ctx } = this
 
@@ -347,7 +405,7 @@ export class Renderer {
       if (!m.held.has(binding.lane)) return
       const g = geom.lanes[binding.lane]!
       ctx.fillStyle = 'rgba(55,50,42,0.05)'
-      ctx.fillRect(g.cx - g.width / 2, 0, g.width, judgeY)
+      ctx.fillRect(g.cx - g.width / 2, zoneY, g.width, judgeY - zoneY)
     })
 
     // 轨道染色（工单 09）：带色音符落下时，它所在的键位整列淡染同色——
@@ -365,34 +423,28 @@ export class Renderer {
       ctx.globalAlpha = 1
     }
 
-    // 白键列分隔线（黑键嵌列不再单独分格）；余韵中随全场降调
+    // 白键列分隔：只画在下落区，到判定线为止，不切进战场
     ctx.strokeStyle = gate === null ? FAINT_INK : 'rgba(55,50,42,0.05)'
     ctx.lineWidth = 1
     const whites = geom.lanes.filter((l) => !l.black).length
     for (let i = 0; i <= whites; i += 1) {
       const x = Math.round(geom.x0 + i * (geom.fieldW / whites)) + 0.5
       ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, judgeY + 48)
+      ctx.moveTo(x, zoneY)
+      ctx.lineTo(x, judgeY)
       ctx.stroke()
     }
 
-    // 判定线：主笔 + 淡晕（余韵中略敛）
+    // 判定线：淡晕 + 一段枯笔（两端略虚，随拍轻呼吸）
     const lineDim = gate === null ? 1 : 0.55
+    const breathe = 0.9 + 0.1 * Math.sin(m.t * Math.PI * 2)
     ctx.strokeStyle = `rgba(55,50,42,${0.08 * lineDim})`
     ctx.lineWidth = 14
     ctx.beginPath()
     ctx.moveTo(geom.x0 - 14, judgeY)
     ctx.lineTo(geom.x0 + geom.fieldW + 14, judgeY)
     ctx.stroke()
-    ctx.globalAlpha = lineDim
-    ctx.strokeStyle = INK
-    ctx.lineWidth = 5
-    ctx.beginPath()
-    ctx.moveTo(geom.x0 - 10, judgeY)
-    ctx.lineTo(geom.x0 + geom.fieldW + 10, judgeY)
-    ctx.stroke()
-    ctx.globalAlpha = 1
+    this.dryBrush(geom.x0 - 6, geom.x0 + geom.fieldW + 6, judgeY, 0.85 * lineDim * breathe)
 
     // 下落音符（黑键音块更窄更深，读作黑键）；
     // 余韵窗口内位置冻结在窗口起点、透明度走「溶解→凝出」包络——
@@ -406,24 +458,48 @@ export class Renderer {
       const g = geom.lanes[note.lane]
       if (g === undefined) continue
       const noteH = 26
-      if (y < -noteH - 20) continue
+      if (y < -noteH - 28) continue
       const alpha = gate === null ? 1 : gate.alpha
       if (alpha <= 0.01) continue
       const noteW = g.width * (g.black ? 0.78 : 0.56)
-      ctx.globalAlpha = alpha
-      // 异色音符（工单 09）：色墨填充 + 外圈同色晕——余光里靠颜色分辨词缀
+      // 临近判定线略压扁，读作「落到纸上」；不影响判定时刻
+      const near = Math.max(0, Math.min(1, 1 - shownDt / 0.16))
+      const drawH = noteH * (1 - 0.16 * near)
       const tintStyle = note.tint === undefined ? null : TINT_STYLE[note.tint]
+      ctx.globalAlpha = alpha
+      if (shownDt > 0.02 && shownDt < VISIBLE_AHEAD) {
+        const trail = Math.min(18, shownDt * FALL_SPEED * 0.22)
+        const grad = ctx.createLinearGradient(0, y - drawH / 2 - trail, 0, y - drawH / 2)
+        const trailInk = tintStyle?.color ?? (g.black ? DEEP_INK : INK)
+        grad.addColorStop(0, 'rgba(55,50,42,0)')
+        grad.addColorStop(1, trailInk)
+        ctx.globalAlpha = alpha * 0.22
+        ctx.fillStyle = grad
+        ctx.fillRect(g.cx - noteW * 0.22, y - drawH / 2 - trail, noteW * 0.44, trail)
+        ctx.globalAlpha = alpha
+      }
       if (tintStyle !== null) {
         ctx.fillStyle = tintStyle.glow
-        this.roundRect(g.cx - noteW / 2 - 6, y - noteH / 2 - 6, noteW + 12, noteH + 12, 10)
+        this.roundRect(g.cx - noteW / 2 - 5, y - drawH / 2 - 5, noteW + 10, drawH + 10, 5)
         ctx.fill()
       }
-      ctx.fillStyle = tintStyle?.color ?? (g.black ? DEEP_INK : INK)
-      this.roundRect(g.cx - noteW / 2, y - noteH / 2, noteW, noteH, 7)
+      const body = ctx.createLinearGradient(0, y - drawH / 2, 0, y + drawH / 2)
+      if (tintStyle !== null) {
+        body.addColorStop(0, tintStyle.color)
+        body.addColorStop(1, tintStyle.color)
+      } else if (g.black) {
+        body.addColorStop(0, '#3f3830')
+        body.addColorStop(1, DEEP_INK)
+      } else {
+        body.addColorStop(0, '#5c554b')
+        body.addColorStop(1, '#2a261f')
+      }
+      ctx.fillStyle = body
+      this.roundRect(g.cx - noteW / 2, y - drawH / 2, noteW, drawH, 3)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(239,233,220,0.35)'
+      ctx.strokeStyle = PAPER_SHEEN
       ctx.lineWidth = 1.5
-      this.roundRect(g.cx - noteW / 2 + 3, y - noteH / 2 + 3, noteW - 6, noteH - 6, 5)
+      this.roundRect(g.cx - noteW / 2 + 3, y - drawH / 2 + 3, noteW - 6, Math.max(2, drawH - 6), 2)
       ctx.stroke()
       ctx.globalAlpha = 1
     }
@@ -472,19 +548,14 @@ export class Renderer {
     const farY = H * FAR_Y_FRAC
     const baseR = Math.min(H * 0.1, W * 0.08, 92)
 
-    // 琴阵（GLOSSARY）：怪物停驻并开始咬人的防线——主笔 + 淡晕
+    // 琴阵：淡晕 + 与判定线同一支枯笔，读作同一张纸上的两条横线
     ctx.strokeStyle = 'rgba(55,50,42,0.07)'
     ctx.lineWidth = 12
     ctx.beginPath()
     ctx.moveTo(geom.x0 - 12, lineY)
     ctx.lineTo(geom.x0 + geom.fieldW + 12, lineY)
     ctx.stroke()
-    ctx.strokeStyle = 'rgba(55,50,42,0.4)'
-    ctx.lineWidth = 4
-    ctx.beginPath()
-    ctx.moveTo(geom.x0 - 8, lineY)
-    ctx.lineTo(geom.x0 + geom.fieldW + 8, lineY)
-    ctx.stroke()
+    this.dryBrush(geom.x0 - 4, geom.x0 + geom.fieldW + 4, lineY, 0.42)
 
     // 纵深 → 屏上位置：近（琴阵）大、远（深处）小；横向散布仅视觉
     const place = (monster: MonsterView, at: number): { x: number; y: number; r: number } => {
@@ -515,10 +586,19 @@ export class Renderer {
       const p = age / SWEEP_LIFE
       const y = lineY - (lineY - farY) * p
       const fade = (1 - p) ** 1.4
-      ctx.globalAlpha = 0.15 * fade * (h.chord ? 1.6 : 1)
+      ctx.globalAlpha = 0.16 * fade * (h.chord ? 1.6 : 1)
+      ctx.strokeStyle = DEEP_INK
+      ctx.lineWidth = 2.2
+      ctx.lineCap = 'round'
+      const half = geom.fieldW * (0.22 + 0.36 * p)
+      ctx.beginPath()
+      ctx.moveTo(W / 2 - half, y + 6)
+      ctx.quadraticCurveTo(W / 2, y - 10 - 8 * (1 - p), W / 2 + half, y + 6)
+      ctx.stroke()
+      ctx.globalAlpha = 0.1 * fade * (h.chord ? 1.5 : 1)
       ctx.fillStyle = DEEP_INK
       ctx.beginPath()
-      ctx.ellipse(W / 2, y, geom.fieldW * 0.58, 10 + 20 * (1 - p) * (h.chord ? 1.5 : 1), 0, 0, Math.PI * 2)
+      ctx.ellipse(W / 2, y, half * 0.72, 7 + 10 * (1 - p), 0, 0, Math.PI * 2)
       ctx.fill()
       ctx.globalAlpha = 1
     }
@@ -814,14 +894,14 @@ export class Renderer {
     ctx.lineTo(h * 0.05, bladeW)
     ctx.closePath()
     ctx.fill()
-    ctx.strokeStyle = 'rgba(239,233,220,0.45)'
+    ctx.strokeStyle = PAPER_SHEEN
     ctx.lineWidth = Math.max(0.8, h * 0.012)
     ctx.beginPath()
     ctx.moveTo(h * 0.14, -bladeW * 0.55)
     ctx.lineTo(bladeLen * 0.92, -bladeW * 1.05)
     ctx.stroke()
     if (anim.slash > 0.01) {
-      ctx.strokeStyle = 'rgba(239,233,220,0.7)'
+      ctx.strokeStyle = 'rgba(239,233,220,0.75)'
       ctx.lineWidth = Math.max(1.2, h * (0.03 + 0.02 * anim.slash))
       ctx.beginPath()
       ctx.arc(0, 0, bladeLen * 0.86, -1.15, 0.35 + 0.5 * (1 - anim.slash))
@@ -1163,6 +1243,29 @@ export class Renderer {
       ctx.fillText(numeral, W / 2, H * 0.42)
       ctx.globalAlpha = 1
     }
+  }
+
+  /**
+   * 横贯一段的枯笔：三段错落的细线叠成飞白，两端虚、中段实。
+   * alpha 是整笔的浓淡（判定线浓、琴阵淡）。
+   */
+  private dryBrush(x0: number, x1: number, y: number, alpha: number): void {
+    const { ctx } = this
+    const span = Math.max(1, x1 - x0)
+    ctx.lineCap = 'round'
+    for (let pass = 0; pass < 3; pass += 1) {
+      const inset = span * (0.02 + pass * 0.012)
+      const dy = (pass - 1) * 1.15
+      const weight = pass === 1 ? 2.4 : 1.1
+      ctx.globalAlpha = alpha * (pass === 1 ? 0.85 : 0.38)
+      ctx.strokeStyle = pass === 1 ? DEEP_INK : INK
+      ctx.lineWidth = weight
+      ctx.beginPath()
+      ctx.moveTo(x0 + inset, y + dy)
+      ctx.quadraticCurveTo((x0 + x1) / 2, y + dy * 0.2 + (pass === 0 ? -0.6 : 0.4), x1 - inset, y - dy * 0.35)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
