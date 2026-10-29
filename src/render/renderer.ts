@@ -166,11 +166,11 @@ const FINALE_SHOW = { label: '终章', particles: 180, wash: 0.52, arcs: 7, labe
 
 const PAPER = '#efe9dc'
 /** 纸色高光：刃口、音符湿边，与纸面同色 */
-const PAPER_SHEEN = 'rgba(239,233,220,0.45)'
+const PAPER_SHEEN = 'rgba(250,247,239,0.58)'
 const INK = '#37322a'
 const DEEP_INK = '#1d1a15'
-const FAINT_INK = 'rgba(55,50,42,0.10)'
 const BLOOD = '#a03d2c'
+const COOL_WASH = 'rgba(63,107,99,0.035)'
 const SERIF = '"Noto Serif SC", "Songti SC", "SimSun", serif'
 
 /** 三色的墨色（工单 09）：寒音青、毒音苍、爆音朱——都压在水墨色域内，不抢纸面色 */
@@ -259,7 +259,7 @@ export class Renderer {
     this.cssH = h
   }
 
-  draw(m: RenderModel): void {
+  draw(m: RenderModel, backdrop = false): void {
     this.resize()
     const { ctx } = this
     const dpr = window.devicePixelRatio || 1
@@ -287,7 +287,7 @@ export class Renderer {
     this.drawSustain(m, W, H, judgeY)
     ctx.restore()
 
-    this.drawHud(m, geom, W, H, judgeY)
+    if (!backdrop) this.drawHud(m, geom, W, H, judgeY)
   }
 
   /** 终章/墨主爆裂的震屏偏移（衰减正弦，确定性） */
@@ -354,15 +354,32 @@ export class Renderer {
       const g = tex.getContext('2d')
       if (g !== null) {
         g.setTransform(dpr, 0, 0, dpr, 0, 0)
-        const specks = Math.min(2400, Math.round((pw * ph) / 1800))
+        const specks = Math.min(3600, Math.round((pw * ph) / 760))
         for (let i = 0; i < specks; i += 1) {
           const x = hash2(i, 17) * pw
           const y = hash2(i, 29) * ph
-          const a = 0.016 + hash2(i, 41) * 0.04
+          const a = 0.012 + hash2(i, 41) * 0.032
           g.fillStyle = `rgba(55,50,42,${a.toFixed(3)})`
-          const fiber = hash2(i, 53) > 0.8
-          g.fillRect(x, y, fiber ? 0.6 : 1.2, fiber ? 2.2 : 0.8)
+          const fiber = hash2(i, 53) > 0.72
+          g.fillRect(x, y, fiber ? 0.55 : 1.05, fiber ? 2.8 : 0.7)
         }
+        // 纸纤维不是噪声层：几道极淡的长纹让空白处也有方向感。
+        for (let i = 0; i < Math.min(44, Math.round(pw / 28)); i += 1) {
+          const y = hash2(i, 67) * ph
+          const x = hash2(i, 71) * pw * 0.75
+          const length = pw * (0.08 + hash2(i, 73) * 0.22)
+          g.strokeStyle = `rgba(74,66,52,${(0.012 + hash2(i, 79) * 0.018).toFixed(3)})`
+          g.lineWidth = 0.45 + hash2(i, 83) * 0.45
+          g.beginPath()
+          g.moveTo(x, y)
+          g.quadraticCurveTo(x + length * 0.5, y - 0.8, x + length, y + 0.5)
+          g.stroke()
+        }
+        const paperGlow = g.createLinearGradient(0, ph * 0.45, 0, ph)
+        paperGlow.addColorStop(0, 'rgba(255,252,244,0)')
+        paperGlow.addColorStop(1, 'rgba(255,252,244,0.12)')
+        g.fillStyle = paperGlow
+        g.fillRect(0, ph * 0.45, pw, ph * 0.55)
         const sky = g.createLinearGradient(0, 0, 0, ph * 0.5)
         sky.addColorStop(0, 'rgba(74,102,114,0.07)')
         sky.addColorStop(0.55, 'rgba(74,102,114,0.02)')
@@ -404,7 +421,7 @@ export class Renderer {
     m.layout.forEach((binding) => {
       if (!m.held.has(binding.lane)) return
       const g = geom.lanes[binding.lane]!
-      ctx.fillStyle = 'rgba(55,50,42,0.05)'
+      ctx.fillStyle = 'rgba(55,50,42,0.075)'
       ctx.fillRect(g.cx - g.width / 2, zoneY, g.width, judgeY - zoneY)
     })
 
@@ -424,7 +441,7 @@ export class Renderer {
     }
 
     // 白键列分隔：只画在下落区，到判定线为止，不切进战场
-    ctx.strokeStyle = gate === null ? FAINT_INK : 'rgba(55,50,42,0.05)'
+    ctx.strokeStyle = gate === null ? 'rgba(55,50,42,0.13)' : 'rgba(55,50,42,0.06)'
     ctx.lineWidth = 1
     const whites = geom.lanes.filter((l) => !l.black).length
     for (let i = 0; i <= whites; i += 1) {
@@ -497,6 +514,7 @@ export class Renderer {
       ctx.fillStyle = body
       this.roundRect(g.cx - noteW / 2, y - drawH / 2, noteW, drawH, 3)
       ctx.fill()
+      // 音符外沿留一圈湿墨高光，和纸面分开但不制造霓虹感。
       ctx.strokeStyle = PAPER_SHEEN
       ctx.lineWidth = 1.5
       this.roundRect(g.cx - noteW / 2 + 3, y - drawH / 2 + 3, noteW - 6, Math.max(2, drawH - 6), 2)
@@ -512,13 +530,66 @@ export class Renderer {
       const isHeld = m.held.has(binding.lane)
       const y = judgeY + (binding.isBlack ? 24 : 34)
       ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${SERIF}`
-      ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.45)'
+      ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.62)'
       ctx.fillText(binding.key, g.cx, y)
       if (isHeld) {
-        ctx.fillStyle = 'rgba(55,50,42,0.5)'
+        ctx.fillStyle = 'rgba(55,50,42,0.62)'
         ctx.fillRect(g.cx - 9, y + 13, 18, 2.5)
       }
     })
+  }
+
+  /**
+   * 战场远处的缓慢气流：用极淡的冷墨水汽把上半区和纸面粘在一起。
+   * 它只改变绘制，不参与碰撞、推进或任何对局时钟。
+   */
+  private drawBattleAtmosphere(m: RenderModel, W: number, farY: number, lineY: number): void {
+    const { ctx } = this
+    const depth = Math.max(1, lineY - farY)
+    const phase = m.t * 0.17
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'multiply'
+    for (let i = 0; i < 3; i += 1) {
+      const seed = i * 17 + 3
+      const drift = Math.sin(phase + i * 1.9) * W * 0.035
+      const x = W * (0.18 + i * 0.3) + drift
+      const y = farY + depth * (0.2 + i * 0.18) + Math.sin(phase * 0.7 + seed) * 5
+      const rx = W * (0.18 + hash2(seed, 1) * 0.09)
+      const ry = depth * (0.045 + hash2(seed, 2) * 0.035)
+      const mist = ctx.createRadialGradient(x, y, 0, x, y, rx)
+      mist.addColorStop(0, 'rgba(63,107,99,0.07)')
+      mist.addColorStop(0.55, 'rgba(63,107,99,0.025)')
+      mist.addColorStop(1, 'rgba(63,107,99,0)')
+      ctx.globalAlpha = 0.58 + 0.12 * Math.sin(phase + i)
+      ctx.fillStyle = mist
+      ctx.beginPath()
+      ctx.ellipse(x, y, rx, ry, (i - 1) * 0.08, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.lineCap = 'round'
+    for (let i = 0; i < 4; i += 1) {
+      const seed = i * 23 + 11
+      const y = farY + depth * (0.12 + i * 0.18)
+      const offset = Math.sin(phase * (0.72 + i * 0.08) + seed) * W * 0.04
+      const span = W * (0.46 + hash2(seed, 4) * 0.24)
+      ctx.globalAlpha = 0.5 + 0.12 * Math.sin(phase + i * 0.8)
+      ctx.strokeStyle = COOL_WASH
+      ctx.lineWidth = 1 + hash2(seed, 5) * 1.8
+      ctx.beginPath()
+      ctx.moveTo(W * 0.12 + offset, y)
+      ctx.quadraticCurveTo(
+        W * 0.12 + offset + span * 0.5,
+        y - 8 - hash2(seed, 6) * 10,
+        W * 0.12 + offset + span,
+        y + 3,
+      )
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+    ctx.restore()
   }
 
   /**
@@ -548,14 +619,23 @@ export class Renderer {
     const farY = H * FAR_Y_FRAC
     const baseR = Math.min(H * 0.1, W * 0.08, 92)
 
+    // 战场/落音区有轻微冷墨分层，主交界仍由同一支枯笔收住。
+    const boundary = ctx.createLinearGradient(0, zoneY - 13, 0, zoneY + 13)
+    boundary.addColorStop(0, 'rgba(55,50,42,0)')
+    boundary.addColorStop(0.48, 'rgba(55,50,42,0.035)')
+    boundary.addColorStop(1, 'rgba(55,50,42,0)')
+    ctx.fillStyle = boundary
+    ctx.fillRect(0, zoneY - 13, W, 26)
+    this.drawBattleAtmosphere(m, W, farY, lineY)
+
     // 琴阵：淡晕 + 与判定线同一支枯笔，读作同一张纸上的两条横线
-    ctx.strokeStyle = 'rgba(55,50,42,0.07)'
-    ctx.lineWidth = 12
+    ctx.strokeStyle = 'rgba(55,50,42,0.08)'
+    ctx.lineWidth = 14
     ctx.beginPath()
-    ctx.moveTo(geom.x0 - 12, lineY)
-    ctx.lineTo(geom.x0 + geom.fieldW + 12, lineY)
+    ctx.moveTo(geom.x0 - 14, lineY)
+    ctx.lineTo(geom.x0 + geom.fieldW + 14, lineY)
     ctx.stroke()
-    this.dryBrush(geom.x0 - 4, geom.x0 + geom.fieldW + 4, lineY, 0.42)
+    this.dryBrush(geom.x0 - 5, geom.x0 + geom.fieldW + 5, lineY, 0.52)
 
     // 纵深 → 屏上位置：近（琴阵）大、远（深处）小；横向散布仅视觉
     const place = (monster: MonsterView, at: number): { x: number; y: number; r: number } => {
@@ -1116,13 +1196,16 @@ export class Renderer {
   ): void {
     const { ctx } = this
 
-    // 玩家 HP：屏幕顶边通栏，永远在余光里
+    // 玩家 HP：屏幕顶边通栏，永远在余光里；朱砂只留一条细芯，减少「贴边红条」的突兀感
     const hpFrac = Math.max(0, m.playerHp / m.playerMaxHp)
-    ctx.fillStyle = 'rgba(160,61,44,0.15)'
-    ctx.fillRect(0, 0, W, 10)
+    const hpPulse = 0.92 + 0.08 * Math.sin(m.t * 2.2)
+    ctx.fillStyle = 'rgba(160,61,44,0.12)'
+    ctx.fillRect(0, 0, W, 8)
     if (hpFrac > 0) {
-      ctx.fillStyle = BLOOD
-      ctx.fillRect(0, 0, W * hpFrac, 10)
+      ctx.fillStyle = `rgba(160,61,44,${(0.78 + 0.12 * hpPulse).toFixed(3)})`
+      ctx.fillRect(0, 0, W * hpFrac, 8)
+      ctx.fillStyle = `rgba(250,247,239,${(0.34 * hpPulse).toFixed(3)})`
+      ctx.fillRect(0, 0, W * hpFrac, 1)
     }
 
     // 琴心蓄能槽（工单 10）：HP 条底下一条青碧细槽——余光可读，满格即放

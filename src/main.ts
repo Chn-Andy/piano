@@ -371,13 +371,13 @@ function showTitle(): void {
   const firstVisit = !tutorialDone(storage)
   showOverlay(`
     <div class="screen">
-      <h1>心琴</h1>
+      <h1 class="title-mark">心琴</h1>
       <p>${DEV_BATTLE
         ? `开发验证 · ${DEV_SONG?.title ?? ''}（${DIFFICULTY_LABELS[DEV_DIFFICULTY]}）· ${AUTO === 'perfect' ? '自动完美弹奏' : AUTO === 'idle' ? '静置败局' : '手动'}`
         : firstVisit
           ? '水墨斗琴 · 音符落处，剑气斩妖'
           : ''}</p>
-      <p>点击此处或按任意键 · ${firstVisit && !DEV_BATTLE ? '开始键位引导' : '开始'}</p>
+      <p class="start-prompt">点击此处或按任意键 · ${firstVisit && !DEV_BATTLE ? '开始键位引导' : '开始'}</p>
     </div>`,
   )
 }
@@ -779,7 +779,7 @@ function drawBackdrop(): void {
   renderer.draw({
     chart: backdropChart,
     layout: layoutForKeys(backdropChart.meta?.keys ?? []).keys,
-    t: 0,
+    t: performance.now() / 1000,
     pending: [],
     combo: 0,
     comboMultiplier: 1,
@@ -797,7 +797,7 @@ function drawBackdrop(): void {
     qinxinGauge: 0,
     qinxins: [],
     sustains: [],
-  })
+  }, true)
 }
 
 function frame(): void {

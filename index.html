@@ -25,11 +25,11 @@
         align-items: center;
         justify-content: center;
         gap: 14px;
-        background: rgba(239, 233, 220, 0.9);
-        color: #2b2a26;
+        background: rgba(239, 233, 220, 0.78);
+        color: #1d1a15;
         font-family: 'Songti SC', 'Noto Serif SC', 'SimSun', serif;
         user-select: none;
-        transition: opacity 0.4s ease;
+        transition: opacity 0.55s ease;
       }
       #overlay.hidden {
         opacity: 0;
@@ -45,11 +45,32 @@
         box-sizing: border-box;
       }
       .screen h1 {
+        position: relative;
         margin: 0;
+        color: #1d1a15;
         font-size: 58px;
         font-weight: 600;
         letter-spacing: 0.35em;
         text-indent: 0.35em;
+        animation: inkBreath 6s ease-in-out infinite;
+      }
+      .screen h1.title-mark::after {
+        content: '琴';
+        position: absolute;
+        right: -1.55em;
+        bottom: -0.1em;
+        display: grid;
+        width: 1.05em;
+        height: 1.05em;
+        place-items: center;
+        border: 1px solid #a03d2c;
+        color: #a03d2c;
+        font-size: 0.25em;
+        line-height: 1;
+        letter-spacing: 0;
+        text-indent: 0;
+        transform: rotate(-5deg);
+        opacity: 0.78;
       }
       .screen h2 {
         margin: 0;
@@ -65,20 +86,39 @@
         line-height: 1.7;
         text-align: center;
       }
+      .screen > p:first-of-type {
+        color: #6c675d;
+      }
+      .start-prompt {
+        color: #37322a !important;
+        font-size: 18px !important;
+        letter-spacing: 0.08em;
+        animation: promptBreath 2.8s ease-in-out infinite;
+      }
+      .start-prompt::before,
+      .start-prompt::after {
+        display: inline-block;
+        color: #a03d2c;
+        content: '·';
+        font-size: 1.1em;
+        opacity: 0.72;
+      }
+      .start-prompt::before { margin-right: 0.55em; }
+      .start-prompt::after { margin-left: 0.55em; }
       .hint {
         margin-top: 6px;
         font-size: 14px;
-        color: #8a857a;
+        color: #777166;
       }
       kbd {
         display: inline-block;
         min-width: 1.4em;
         padding: 2px 7px;
         margin: 0 2px;
-        border: 1px solid #b7b1a1;
+        border: 1px solid #9e9788;
         border-bottom-width: 3px;
         border-radius: 2px;
-        background: #faf7ef;
+        background: rgba(250, 247, 239, 0.72);
         font-family: inherit;
         font-size: 15px;
         text-align: center;
@@ -257,6 +297,20 @@
       }
       .stats-line b {
         font-weight: 700;
+      }
+      @keyframes inkBreath {
+        0%, 100% { opacity: 0.92; transform: translateY(0); }
+        50% { opacity: 1; transform: translateY(-1px); }
+      }
+      @keyframes promptBreath {
+        0%, 100% { opacity: 0.72; }
+        50% { opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .screen h1,
+        .start-prompt {
+          animation: none;
+        }
       }
     </style>
   </head>
