@@ -51,7 +51,7 @@
 | 渠道 | 事实（回读所得） |
 |---|---|
 | 代码 | 推 Gitea `origin/main` 与 GitHub `Chn-Andy/piano` 均到 `e7f1869` |
-| GitHub Pages | 线上 `assets/index-xIk7nWO_.js`（142,518 字节，sha256 `2adfd5ed9da3…0d1`）与本地 `dist` **逐字节同哈希**；浏览器实跑线上 URL（`?auto=perfect&song=canon-in-d&chart=easy`）进入 playing，4 秒时 2 完美 / 0 良好 / 0 失误，`avgOffsetMs = 0`，画面里能看见「完美」与其下的「正点」小字 |
+| GitHub Pages | workflow run [40991458306](https://github.com/Chn-Andy/piano/actions/runs/40991458306) `completed success`；线上 `assets/index-xIk7nWO_.js`（142,518 字节，sha256 `2adfd5ed9da3…0d1`）与本地 `dist` **逐字节同哈希**；浏览器实跑线上 URL（`?auto=perfect&song=canon-in-d&chart=easy`）进入 playing，4 秒时 2 完美 / 0 良好 / 0 失误，`avgOffsetMs = 0`，画面里能看见「完美」与其下的「正点」小字 |
 | itch.io | butler 推 channel `html5`，build **✓ #2248916**（from #2242759），version `1.3.0`；公开页 `chn-andy.itch.io/xinqin` 的播放器指向 `html-classic.itch.zone/html/20119642-2248916/index.html`，该页引用的正是 `index-xIk7nWO_.js`；顶层打开新嵌入产物 → 键位引导 → 曲库 → 回车进入倒计时 → playing，5 个钢琴采样全部取到，0 JS 错误 |
 | 包体 | `xinqin-itch.zip` 965,930 字节，7 文件，`index.html` 在包根；`zipfile.testzip()` 无坏档，7 个文件与 `dist/` 逐文件 sha256 一致 |
 | 未验证 | 未在 itch 页面的**交叉域 iframe 内**完成整局（跨域不可脚本化，只能把同一份嵌入产物以顶层页跑）；线上只观察到「正点」形态的偏差小字，「早 N / 晚 N」分支由单元测试覆盖（`rating.test.ts`「平均偏差的结算措辞」），未在真人手上验证 |
