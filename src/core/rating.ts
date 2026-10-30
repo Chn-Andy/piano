@@ -32,3 +32,21 @@ export function ratingFor(summary: BattleSummary, outcome: 'victory' | 'defeat')
   if (accuracy >= RATING.A_ACCURACY) return 'A'
   return 'B'
 }
+
+/**
+ * 平均偏差的措辞（ADR-0013，工单 15）：判定口径落在结算画面上的那句话。
+ * 判定只比 |按键 − 音符|，玩家看不到毫秒数就学不会收敛——平均偏差是唯一
+ * 可执行的指路（正值 = 偏晚 → 音画偏移调正，语义见 settings.judgedTime）。
+ *
+ * 返回纯文本（null = 不显示，由壳层决定包不包标签）：
+ * - 命中不足 OFFSET_ADVICE_MIN_HITS 颗 → null（样本太小，平均值没意义）；
+ * - |平均偏差| < OFFSET_ADVICE_MS → 只说「节奏稳」，不劝人调；
+ * - 其余 → 报方向与毫秒，并给出偏移建议值（即平均偏差本身）。
+ */
+export function offsetAdvice(avgOffset: number, hits: number): string | null {
+  if (hits < RATING.OFFSET_ADVICE_MIN_HITS) return null
+  const ms = Math.round(avgOffset * 1000)
+  const signed = `${ms > 0 ? '+' : ''}${ms}`
+  if (Math.abs(ms) < RATING.OFFSET_ADVICE_MS) return `按键平均偏差 ${signed}ms —— 节奏稳`
+  return `按键平均${ms > 0 ? '偏晚' : '偏早'} ${Math.abs(ms)}ms —— 可在设置里把音画偏移调到 ${signed}`
+}

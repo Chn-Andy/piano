@@ -195,6 +195,12 @@ export interface BattleSummary {
   readonly damageDealt: number
   /** 本场琴心通明释放次数（工单 10；结算画面展示） */
   readonly qinxin: number
+  /**
+   * 命中偏差的算术平均（秒，有符号，正=迟）：只算命中（Miss 没有按键，
+   * 不计入）。结算画面把它换算成毫秒，直接指路「老是偏晚 → 把音画偏移
+   * 调到 +N」（工单 15；定义见 config.JUDGMENT_WINDOWS）。
+   */
+  readonly avgOffset: number
 }
 
 /** keyDown 的结果。repeat=true 表示长按产生的重复按下，已被忽略。 */
@@ -295,6 +301,9 @@ export class Simulator {
   private goodCount = 0
   private missCount = 0
   private damageDealt = 0
+  /** 命中偏差累加（秒，正=迟）与命中数——结算的平均偏差（工单 15） */
+  private offsetSum = 0
+  private offsetHits = 0
   /** 琴心已蓄的命中数（工单 10；蓄能进度 = 它 / CHARGE_COMBOS） */
   private qinxinHits = 0
   /** 已释放的琴心通明次数 */
@@ -365,6 +374,7 @@ export class Simulator {
       miss: this.missCount,
       damageDealt: this.damageDealt,
       qinxin: this.qinxinCount,
+      avgOffset: this.offsetHits === 0 ? 0 : this.offsetSum / this.offsetHits,
     }
   }
 
@@ -421,6 +431,9 @@ export class Simulator {
       Math.abs(offset) <= JUDGMENT_WINDOWS.perfect ? 'Perfect' : 'Good'
     if (judgment === 'Perfect') this.perfectCount += 1
     else this.goodCount += 1
+    // 偏差台账（工单 15）：结算给「平均偏早/偏晚」用，是音画偏移的唯一指路
+    this.offsetSum += offset
+    this.offsetHits += 1
     this.noteTiers[note.id] = judgment
     this.strike(note, judgment, time)
     this.chargeQinxin(time)

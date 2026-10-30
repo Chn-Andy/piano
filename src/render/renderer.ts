@@ -16,7 +16,7 @@
 
 import type { Chart, ChartNote, Lane, NoteTint } from '../core/chart'
 import { depthAt } from '../core/combat'
-import { BATTLEFIELD } from '../core/config'
+import { BATTLEFIELD, JUDGMENT_WINDOWS } from '../core/config'
 import { TINT_LABELS } from '../core/tints'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
@@ -28,6 +28,12 @@ export interface JudgmentFlash {
   readonly judgment: 'Perfect' | 'Good' | 'Miss'
   /** 闪示对应的谱面时刻 */
   readonly at: number
+  /**
+   * 按键相对音符时刻的偏差（秒，正=迟）——判定闪示下的小字「早 12 / 晚 43」
+   * （ADR-0013：判定带在屏幕上只有 ±17px，肉眼分辨不出，只能靠数字教）。
+   * Miss 没有按键，为 undefined。
+   */
+  readonly offset?: number
 }
 
 /** 最近命中的反馈（怪物受击闪/缩放用） */
@@ -205,6 +211,17 @@ const TIER_STYLE: Record<'Perfect' | 'Good' | 'Miss', { label: string; color: st
   Perfect: { label: '完美', color: '#8a6d1f' },
   Good: { label: '良好', color: '#37322a' },
   Miss: { label: '失误', color: '#a03d2c' },
+}
+
+/**
+ * 判定偏差的小字（ADR-0013）：早/晚 + 毫秒。完美带在屏幕上只有 ±17px，
+ * 玩家看不出自己是早了还是晚了——这个数字是唯一的学习通道，也是「老是
+ * 偏晚 → 去设置里把音画偏移调正」的依据。整 0 毫秒记「正点」。
+ */
+function offsetLabel(offset: number): string {
+  const ms = Math.round(offset * 1000)
+  if (ms === 0) return '正点'
+  return `${ms < 0 ? '早' : '晚'} ${Math.abs(ms)}`
 }
 
 const COUNT_NUMERALS = ['四', '三', '二', '一']
@@ -455,6 +472,26 @@ export class Renderer {
     // 判定线：淡晕 + 一段枯笔（两端略虚，随拍轻呼吸）
     const lineDim = gate === null ? 1 : 0.55
     const breathe = 0.9 + 0.1 * Math.sin(m.t * Math.PI * 2)
+    // 判定带（ADR-0013）：把判定窗口折算成屏幕上的实际厚度——完美带
+    // ±perfect × 下落速度（50ms → ±17px），外圈良好带到 ±120ms（±41px）。
+    // 没有这两道墨晕，「线的中间附近」只是文档里的一句话；有了它，玩家
+    // 看得见完美带比一颗音符还窄（26px 高），也就明白为什么必须看数字反馈。
+    // 上半个带 = 按早了（音符还在线上方），下半个带 = 按晚了（音符已过线）。
+    const goodBand = JUDGMENT_WINDOWS.good * FALL_SPEED
+    const perfectBand = JUDGMENT_WINDOWS.perfect * FALL_SPEED
+    if (goodBand > 1) {
+      for (const [half, alpha] of [
+        [goodBand, 0.016],
+        [perfectBand, 0.055],
+      ] as const) {
+        const wash = ctx.createLinearGradient(0, judgeY - half, 0, judgeY + half)
+        wash.addColorStop(0, 'rgba(55,50,42,0)')
+        wash.addColorStop(0.5, `rgba(55,50,42,${alpha * lineDim})`)
+        wash.addColorStop(1, 'rgba(55,50,42,0)')
+        ctx.fillStyle = wash
+        ctx.fillRect(geom.x0 - 8, judgeY - half, geom.fieldW + 16, half * 2)
+      }
+    }
     ctx.strokeStyle = `rgba(55,50,42,${0.08 * lineDim})`
     ctx.lineWidth = 14
     ctx.beginPath()
@@ -1302,6 +1339,13 @@ export class Renderer {
       ctx.font = `700 25px ${SERIF}`
       ctx.fillStyle = style.color
       ctx.fillText(style.label, lx, y)
+      // 偏差小字（ADR-0013）：完美/良好后面跟一句「早 12 / 晚 43」，
+      // 落到下一行不挤判定带；Miss 没有按键，没有偏差可言。
+      if (f.offset !== undefined && f.judgment !== 'Miss') {
+        ctx.font = `400 12px ${SERIF}`
+        ctx.fillStyle = 'rgba(55,50,42,0.66)'
+        ctx.fillText(offsetLabel(f.offset), lx, y + 18)
+      }
       ctx.globalAlpha = 1
     }
 

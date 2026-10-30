@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ratingFor } from './rating'
+import { offsetAdvice, ratingFor } from './rating'
 import type { BattleSummary } from './simulator'
 
 /**
@@ -16,6 +16,7 @@ function summary(partial: Partial<BattleSummary>): BattleSummary {
     miss: 0,
     damageDealt: 0,
     qinxin: 0,
+    avgOffset: 0,
     ...partial,
   }
 }
@@ -56,5 +57,34 @@ describe('评级映射（S/A/B/C）', () => {
   it('零音符的空摘要不崩溃（精度记 0，胜局保底 B）', () => {
     expect(ratingFor(summary({}), 'victory')).toBe('B')
     expect(ratingFor(summary({}), 'defeat')).toBe('C')
+  })
+})
+
+/**
+ * 平均偏差的措辞（ADR-0013，工单 15）：判定只比 |按键 − 音符|，玩家看不到
+ * 毫秒数就学不会收敛——「平均偏早/偏晚 N ms + 该把音画偏移调到几」是唯一
+ * 可执行的一句话。正向偏移 = 判得更早，所以偏晚就给正数（方向同 judgedTime）。
+ */
+describe('平均偏差的结算措辞', () => {
+  it('命中太少（< 8 颗）不报：平均值没有意义', () => {
+    expect(offsetAdvice(0.05, 7)).toBeNull()
+    expect(offsetAdvice(0.05, 0)).toBeNull()
+  })
+
+  it('平均偏差在门槛内（|ms| < 8）只说节奏稳，不劝人调', () => {
+    expect(offsetAdvice(0.007, 20)).toBe('按键平均偏差 +7ms —— 节奏稳')
+    expect(offsetAdvice(0, 20)).toBe('按键平均偏差 0ms —— 节奏稳')
+  })
+
+  it('偏晚 → 报「偏晚 N ms」并把偏移调正（正值 = 判得更早）', () => {
+    expect(offsetAdvice(0.023, 30)).toBe('按键平均偏晚 23ms —— 可在设置里把音画偏移调到 +23')
+  })
+
+  it('偏早 → 报「偏早 N ms」并把偏移调负', () => {
+    expect(offsetAdvice(-0.06, 30)).toBe('按键平均偏早 60ms —— 可在设置里把音画偏移调到 -60')
+  })
+
+  it('恰好 8ms 就算偏（边界含），不落回「节奏稳」', () => {
+    expect(offsetAdvice(0.008, 20)).toBe('按键平均偏晚 8ms —— 可在设置里把音画偏移调到 +8')
   })
 })

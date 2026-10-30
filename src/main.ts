@@ -23,12 +23,12 @@ import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
 import type { KeyBinding, KeyLayout } from './core/keymap'
 import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/records'
 import type { KeyValueStore, Records } from './core/records'
-import { ratingFor } from './core/rating'
+import { accuracyFor, offsetAdvice, ratingFor } from './core/rating'
 import type { Rating } from './core/rating'
 import { judgedTime, loadSettings, saveSettings } from './core/settings'
 import type { Settings } from './core/settings'
 import { Simulator } from './core/simulator'
-import type { BattleEvent, GameEvent } from './core/simulator'
+import type { BattleEvent, BattleSummary, GameEvent } from './core/simulator'
 import type { SustainEvent } from './core/sustain'
 import { markTutorialDone, tutorialDone } from './core/tutorial'
 import { Renderer } from './render/renderer'
@@ -92,6 +92,8 @@ const debugView: {
   perfect: number
   good: number
   miss: number
+  /** 平均偏差（毫秒，正=偏晚；只算命中）——工单 15 判定口径的浏览器实测读数 */
+  avgOffsetMs: number
   /** 玩家血量与场上活妖数、累计咬线口数（工单 08 浏览器实测读数） */
   playerHp: number
   monstersAlive: number
@@ -117,6 +119,7 @@ const debugView: {
   perfect: 0,
   good: 0,
   miss: 0,
+  avgOffsetMs: 0,
   playerHp: 100,
   monstersAlive: 0,
   bites: 0,
@@ -458,6 +461,15 @@ function showPause(): void {
   overlay.querySelector('#btn-abandon')?.addEventListener('click', abandonBattle)
 }
 
+/**
+ * 结算的平均偏差指路（ADR-0013，工单 15）：措辞在纯层（`rating.offsetAdvice`，
+ * 有测试钉着），壳层只负责包一层标签。null = 命中太少，不显示。
+ */
+function offsetAdviceLine(summary: BattleSummary): string {
+  const advice = offsetAdvice(summary.avgOffset, summary.perfect + summary.good)
+  return advice === null ? '' : `<p class="hint">${advice}</p>`
+}
+
 function showSettlement(): void {
   outcomeShown = true
   const summary = sim.summary()
@@ -471,6 +483,8 @@ function showSettlement(): void {
       ${settlement?.improved === true ? '<div class="new-record">新纪录</div>' : ''}
       <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次</p>
       <p>完美 ${summary.perfect} · 良好 ${summary.good} · 失误 ${summary.miss}</p>
+      <p>精度 <b>${(accuracyFor(summary) * 100).toFixed(1)}%</b></p>
+      ${offsetAdviceLine(summary)}
       <div class="actions">
         <button id="btn-retry">再来一次（回车）</button>
         <button id="btn-library" class="secondary">返回曲库（Esc）</button>
@@ -574,7 +588,8 @@ function returnToLibrary(): void {
 
 function collect(events: readonly GameEvent[]): void {
   for (const e of events) {
-    flashes.push({ lane: e.lane, judgment: e.judgment, at: e.time })
+    // offset 带进闪示：判定带只有 ±17px 宽，偏差只能靠数字告诉玩家（ADR-0013）
+    flashes.push({ lane: e.lane, judgment: e.judgment, at: e.time, offset: e.offset })
   }
 }
 
@@ -837,6 +852,7 @@ function frame(): void {
   debugView.perfect = summaryNow.perfect
   debugView.good = summaryNow.good
   debugView.miss = summaryNow.miss
+  debugView.avgOffsetMs = Math.round(summaryNow.avgOffset * 1000)
   debugView.playerHp = sim.playerHp
   debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
   debugView.qinxinGauge = Number(sim.qinxinGauge.toFixed(3))

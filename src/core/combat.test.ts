@@ -734,6 +734,37 @@ describe('胜局（歌毕 + 场上怪清完）', () => {
     const perNote = BASE_DAMAGE * comboMultiplierFor(1)
     expect(s.damageDealt).toBeCloseTo(2 * perNote, 9)
   })
+
+  /**
+   * 平均偏差（工单 15）：判定口径的唯一可执行指路——玩家看到「平均偏晚
+   * 18ms」才会去调音画偏移。只把**命中**的偏差平均进去（Miss 没有按键）。
+   */
+  it('summary()：平均偏差是命中偏差的算术平均，Miss 不计入', () => {
+    const chart = createChart([
+      [1.0, 0],
+      [2.0, 0],
+      [3.0, 1],
+    ])
+    const sim = new Simulator(chart, { monsters: [singleMonster(1000)] })
+
+    sim.keyDown(0, 1.0 - 0.04) // 早 40ms → 完美
+    sim.keyUp(0)
+    sim.keyDown(0, 2.0 + 0.1) // 迟 100ms → 良好
+    sim.keyUp(0)
+    sim.tick(3.0 + JUDGMENT_WINDOWS.good + 0.001) // 第三颗不按 → 失误
+
+    const s = sim.summary()
+    expect(s.perfect).toBe(1)
+    expect(s.good).toBe(1)
+    expect(s.miss).toBe(1)
+    expect(s.avgOffset, '(−40ms + 100ms) / 2 = +30ms').toBeCloseTo(0.03, 9)
+  })
+
+  it('summary()：一音未中时平均偏差记 0（不是 NaN）', () => {
+    const sim = new Simulator(createChart([[1.0, 0]]), { monsters: [singleMonster(1000)] })
+    sim.tick(1.0 + JUDGMENT_WINDOWS.good + 0.001)
+    expect(sim.summary().avgOffset).toBe(0)
+  })
 })
 
 /* ── 定标性质：真实谱面产物（Seam 1 吃真实 JSON，锁「可胜可败」差距）──────
