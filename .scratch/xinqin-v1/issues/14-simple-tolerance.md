@@ -73,3 +73,22 @@
 | GitHub Pages | workflow run 40845330781 `completed success`；线上 `assets/index-KitVZeXK.js`（137,448 字节）与本地构建同名同字节；浏览器实跑（`?auto=perfect&song=fur-elise&chart=easy`）进入 playing、判定/怪物正常，全部资源取自 `chn-andy.github.io` |
 | itch.io | butler 推 channel `html5`，build **✓ #2242034**（from #2241422），version `1.2.0`，包 1.03 MiB / 7 文件；嵌入地址 `html-classic.itch.zone/html/20119642-2242034/index.html` 引用的正是 `index-KitVZeXK.js`，直接打开该嵌入页实跑同一条 URL 能进入 playing |
 | 未验证 | 未在 itch 页面的**交叉域 iframe 内**做完整一局（跨域不可脚本化），只验证了同一份嵌入产物以顶层页面运行时正常 |
+
+**2026-10-29 · 发布（画面统一）**：`main` = `b18c054`。只动渲染与菜单样式，判定与战斗数值不动；本地 `tsc` 与 224 项测试通过后双平台同步。
+
+| 渠道 | 事实（回读所得） |
+|---|---|
+| 代码 | 推 Gitea `origin/main` 与 GitHub `Chn-Andy/piano` 均到 `b18c054` |
+| GitHub Pages | workflow run [40854819610](https://github.com/Chn-Andy/piano/actions/runs/40854819610) `completed success`；线上 `assets/index-BsyzPwUG.js`（139,432 字节，sha256 `5d579412bec9`）与本地 `dist` 同哈希；浏览器实跑 `?auto=perfect&song=fur-elise&chart=easy` 进入 playing，18 秒时 11 完美 / 0 失误，画面指纹在变，5 个采样均取自 `chn-andy.github.io` |
+| itch.io | butler 推 channel `html5`，build **✓ #2242370**（from #2242034），version `1.2.1`；上传 `#20119642` 报 963,743 字节，本地包 964,395 字节（差 652，未逐字节核对）；公开页 `chn-andy.itch.io/xinqin` 的播放器指向 `html-classic.itch.zone/html/20119642-2242370/index.html`，该页引用的正是 `index-BsyzPwUG.js` |
+| 未验证 | itch 嵌入页以顶层打开后，点击标题能拉到 5 个采样（均 HTTP 200），但 `fetch` 的 promise 不返回，画面停在 title，**没能进入 playing**。同一份包在 GitHub Pages 上能进入 playing。未在 itch 的交叉域 iframe 内重试 |
+
+**2026-10-29 · 发布（纸面质感与动态）**：`main` = `c9d3269`。只动渲染与菜单样式，判定与战斗数值不动；本地测试、构建和包体校验通过后双平台同步。
+
+| 渠道 | 事实（回读所得） |
+|---|---|
+| 代码 | 推 Gitea `origin/main` 与 GitHub `Chn-Andy/piano` 均到 `c9d3269` |
+| GitHub Pages | workflow run [40864445337](https://github.com/Chn-Andy/piano/actions/runs/40864445337) `completed success`；线上 `assets/index-Ct6IYv2U.js`（141,293 字节，sha256 `2000a615e21dad7ae6bee63b6f828c3f7e8e99b4f9caad5c398567a21f68b2b8`）与本地 `dist` 同字节；浏览器实跑线上 URL，进入 `ended`，79 完美 / 0 良好 / 0 失误 / 满血，0 JS 错误 |
+| itch.io | butler 推 channel `html5`，build **✓ #2242759**（from #2242370），upload `#20119642`，version `4`；公开页 `chn-andy.itch.io/xinqin` 的播放器指向 `html-classic.itch.zone/html/20119642-2242759/index.html`；顶层打开新嵌入产物后进入键位引导，开发验证路径进入倒计时，时间推进且画面指纹变化，0 JS 错误，5 个钢琴采样均 HTTP 200 |
+| 包体 | `xinqin-itch.zip` 965,417 字节，7 个文件，`index.html` 在包根；ZIP 解压校验通过，与 `dist/` 逐文件字节一致 |
+| 未验证 | 未在 itch 页面的交叉域 iframe 内完成整局；已直接验证同一嵌入产物的标题、引导和开发验证战斗路径 |
