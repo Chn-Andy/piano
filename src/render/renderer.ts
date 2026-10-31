@@ -17,7 +17,8 @@
 import type { Chart, ChartNote, Lane, NoteTint } from '../core/chart'
 import { depthAt } from '../core/combat'
 import { BATTLEFIELD, JUDGMENT_WINDOWS, QINXIN } from '../core/config'
-import { CUE_FADE, CUE_LIFE, formatClock, progressCueAt, songProgress } from '../core/progress'
+import { CUE_FADE, CUE_LIFE, formatClock } from '../core/progress'
+import type { ProgressCue, SongProgress } from '../core/progress'
 import { TINT_LABELS } from '../core/tints'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
@@ -94,6 +95,13 @@ export interface RenderModel {
   readonly layout: readonly KeyBinding[]
   /** 谱面时间轴当前时刻；倒计时期间为负 */
   readonly t: number
+  /**
+   * 本帧的进度读数（票 17）。由装配层每帧算**一次**再传下来：进度轨与
+   * `window.__xq` 的读数读同一份，不各算一遍（v1.4 审查 C1）。
+   */
+  readonly progress: SongProgress
+  /** 本帧该浮出的句提示（null = 没有）；与 progress 同源、同一次计算 */
+  readonly cue: ProgressCue | null
   /** 尚未判定的音符（sim.pendingNotes()） */
   readonly pending: readonly ChartNote[]
   readonly combo: number
@@ -1369,13 +1377,14 @@ export class Renderer {
    * 不碰两侧蓄能槽与底部气血条（几何由 hudGeometry 给出，矩形不重叠有测试）。
    *
    * 读数只吃 RenderModel.t（音频主时钟的谱面时刻）：暂停时主时钟冻结，恢复
-   * 后自然连续——这里不引入任何第二个时钟，也不写进模拟器状态。
+   * 后自然连续——这里不引入任何第二个时钟，也不写进模拟器状态。进度与句提示
+   * 由装配层每帧算一次传进来（m.progress / m.cue），渲染层不再各算一遍。
    * 倒计时（t<0）整条不画：开演前没有「已过」可言，任何读数都是乱数。
    */
   private drawProgressRail(m: RenderModel, hud: HudLayout, W: number): void {
     if (m.t < 0) return
     const { ctx } = this
-    const progress = songProgress(m.chart, m.t)
+    const progress = m.progress
     const { rail } = hud
     const cy = rail.y + rail.h / 2
 
@@ -1428,7 +1437,7 @@ export class Renderer {
     ctx.fillText(formatClock(progress.duration), rail.x + rail.w, hud.railReadingBaseline)
 
     // 句提示：同一时刻只有一条（末句提示优先，见 progress.progressCueAt）
-    const cue = progressCueAt(m.chart, m.sustains, m.t)
+    const cue = m.cue
     if (cue === null) return
     const age = m.t - cue.at
     const fadeIn = Math.min(1, Math.max(0, age / 0.15))

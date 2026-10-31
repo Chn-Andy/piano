@@ -8,7 +8,7 @@
 import { createChart } from '../core/chart'
 import type { Chart, DifficultyName, NoteTint, Phrase } from '../core/chart'
 import { TINT_PLAN } from '../core/config'
-import { pitchClassOf } from '../core/pitch'
+import { pitchClassOf, pitchClassOfMidi } from '../core/pitch'
 import { pickTint } from '../core/tints'
 import type { SourceKey, SourceSong } from './midiSource'
 import {
@@ -38,7 +38,7 @@ const WHITE_PC_TO_LANE: Record<number, number> = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4,
 
 /** 简单难度：白键折叠——音高级落白键即其键位；黑键并入上方白键（导音上行） */
 function diatonicLane(pitch: number): number {
-  const pc = ((pitch % 12) + 12) % 12
+  const pc = pitchClassOfMidi(pitch)
   const lane = WHITE_PC_TO_LANE[pc]
   if (lane !== undefined) return lane
   const folded = WHITE_PC_TO_LANE[pc + 1]

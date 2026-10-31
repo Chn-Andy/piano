@@ -51,6 +51,7 @@ describe('本机最佳纪录存取', () => {
       maxCombo: 87,
       accuracy: 0.9,
       missCount: 0,
+      flawlessAccuracy: 0.9, // 零失误的首局也留下单调事实（A1）
     })
   })
 
@@ -72,11 +73,18 @@ describe('本机最佳纪录存取', () => {
       maxCombo: 90,
       accuracy: 0.9,
       missCount: 0,
+      flawlessAccuracy: 0.9, // 零失误的首局也留下单调事实（A1）
     })
 
     const down = recordResult(base, 'canon', 'hard', 'victory', stats('B', 999))
     expect(down.improved).toBe(false)
-    expect(bestRecordFor(down.records, 'canon', 'hard')).toEqual({ rating: 'A', maxCombo: 150 })
+    // 评级没升，但这一局零失误：单调事实照样入册（A1），纪录主体仍是旧的 A
+    expect(down.updated).toBe(true)
+    expect(bestRecordFor(down.records, 'canon', 'hard')).toEqual({
+      rating: 'A',
+      maxCombo: 150,
+      flawlessAccuracy: 0.9,
+    })
   })
 
   it('同级比连击：更高更新，更低或持平不更新', () => {
@@ -101,12 +109,14 @@ describe('本机最佳纪录存取', () => {
       maxCombo: 10,
       accuracy: 0.9,
       missCount: 0,
+      flawlessAccuracy: 0.9, // 零失误的首局也留下单调事实（A1）
     })
     expect(bestRecordFor(records, 'fur-elise', 'easy')).toEqual({
       rating: 'C',
       maxCombo: 1,
       accuracy: 0.9,
       missCount: 0,
+      flawlessAccuracy: 0.9, // 零失误的首局也留下单调事实（A1）
     })
     expect(bestRecordFor(records, 'fur-elise', 'hard')).toBeUndefined()
   })
@@ -129,6 +139,7 @@ describe('本机最佳纪录存取', () => {
     expect(bestRecordFor(records, 'canon', 'easy')).toEqual({ rating: 'S', maxCombo: 82 })
     expect(bestRecordFor(records, 'canon', 'easy')?.accuracy).toBeUndefined()
     expect(bestRecordFor(records, 'canon', 'easy')?.missCount).toBeUndefined()
+    expect(bestRecordFor(records, 'canon', 'easy')?.flawlessAccuracy).toBeUndefined()
   })
 
   it('保存 → 读取 往返一致（键名版本化）', () => {
@@ -153,6 +164,69 @@ describe('本机最佳纪录存取', () => {
       },
     }
     expect(() => saveRecords(store, { canon: { easy: { rating: 'S', maxCombo: 1 } } })).not.toThrow()
+  })
+})
+
+/**
+ * 单调最佳事实（v1.4 两轴审查 A1）：评级/连击是**字典序**最优值，但不是
+ * 掌握度的充分事实——「零失误 + 高精度 + 低连击」的一局在字典序上输给旧纪录，
+ * 于是根本不入册，曲库徽记永远停在弹熟（精熟不可达）。
+ *
+ * 修法：纪录另存 `flawlessAccuracy`（零失误局的最高精度），只升不降、
+ * 与评级/连击无关；`updated` 与 `improved` 分开报，变了就得写回存储。
+ */
+describe('单调最佳事实：零失误局的最高精度（A1）', () => {
+  it('A 零失误 97% 先入册；再打一局评级更高但精度 50%、连击 40：精熟事实不回退', () => {
+    const first = recordResult({}, 'canon', 'easy', 'victory', stats('A', 90, 0.97, 0))
+    expect(bestRecordFor(first.records, 'canon', 'easy')!.flawlessAccuracy).toBeCloseTo(0.97, 6)
+
+    // 构造的极端值：S 级但精度 50%、5 次失误、连击更低——为了让「不回退」可断言
+    const second = recordResult(first.records, 'canon', 'easy', 'victory', stats('S', 40, 0.5, 5))
+    expect(second.improved, '评级更高就算新纪录').toBe(true)
+    expect(bestRecordFor(second.records, 'canon', 'easy')!.rating).toBe('S')
+    expect(bestRecordFor(second.records, 'canon', 'easy')!.maxCombo).toBe(40)
+    expect(
+      bestRecordFor(second.records, 'canon', 'easy')!.flawlessAccuracy,
+      '零失误事实只升不降',
+    ).toBeCloseTo(0.97, 6)
+  })
+
+  it('字典序不占优的零失误局：不算新纪录，但事实要写回（updated = true）', () => {
+    const base = recordResult({}, 'canon', 'easy', 'victory', stats('A', 90, 0.88, 0))
+    const next = recordResult(base.records, 'canon', 'easy', 'victory', stats('B', 40, 0.94, 0))
+
+    expect(next.improved, '评级更低 → 不是新纪录').toBe(false)
+    expect(next.updated, '零失误 94% 是新的最佳事实，必须落盘').toBe(true)
+    expect(bestRecordFor(next.records, 'canon', 'easy')!.rating, '评级仍是 A').toBe('A')
+    expect(bestRecordFor(next.records, 'canon', 'easy')!.flawlessAccuracy).toBeCloseTo(0.94, 6)
+  })
+
+  it('事实只升不降：0.91 → 0.93 升；带失误的一局不抬这条事实', () => {
+    let records: Records = {}
+    records = recordResult(records, 'canon', 'easy', 'victory', stats('A', 90, 0.91, 0)).records
+    records = recordResult(records, 'canon', 'easy', 'victory', stats('A', 95, 0.93, 0)).records
+    expect(bestRecordFor(records, 'canon', 'easy')!.flawlessAccuracy).toBeCloseTo(0.93, 6)
+
+    records = recordResult(records, 'canon', 'easy', 'victory', stats('S', 100, 0.99, 2)).records
+    expect(
+      bestRecordFor(records, 'canon', 'easy')!.flawlessAccuracy,
+      '有失误的一局不贡献精熟事实',
+    ).toBeCloseTo(0.93, 6)
+  })
+
+  it('从未零失误：纪录不带这个字段（不给掌握度留猜的空间）', () => {
+    const { records, updated } = recordResult({}, 'canon', 'easy', 'victory', stats('A', 90, 0.96, 3))
+    expect(updated).toBe(true)
+    expect(bestRecordFor(records, 'canon', 'easy')!.flawlessAccuracy).toBeUndefined()
+    expect(JSON.stringify(records), 'undefined 不该在存储里留下空键').not.toContain('flawlessAccuracy')
+  })
+
+  it('什么都没变的一局：不写存储，返回原对象（updated = false）', () => {
+    const base = recordResult({}, 'canon', 'easy', 'victory', stats('A', 90, 0.9, 0)).records
+    const again = recordResult(base, 'canon', 'easy', 'victory', stats('B', 20, 0.7, 6))
+    expect(again.improved).toBe(false)
+    expect(again.updated).toBe(false)
+    expect(again.records).toBe(base)
   })
 })
 

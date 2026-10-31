@@ -19,21 +19,19 @@
  */
 
 import type { AccompanimentNote, DifficultyName } from '../core/chart'
+import { ACCOMPANIMENT_PLAN } from '../core/config'
 import { harmonicThird } from '../core/harmony'
-import { PAD_VOICES, planPad } from '../core/pad'
-import { foldInto } from '../core/pitch'
-import { roundMs } from './rules'
+import { padVoices, planPad } from '../core/pad'
+import { foldInto, pitchClassOfMidi } from '../core/pitch'
+import { roundMs } from '../core/time'
 import type { SourceSong } from './midiSource'
 
-/** 和声窗口（拍）：两拍一换和声——任意 4 秒里必有一声伴奏 */
+/**
+ * 和声窗口（拍）：两拍一换和声——任意 4 秒里必有一声伴奏。
+ * 声部数与播放力度不在这里：一张表在 `core/config.ts` 的 ACCOMPANIMENT_PLAN
+ * （谱面伴奏与合成铺底同表，转换器与运行时共用）。
+ */
 export const ACCOMPANIMENT_WINDOW_BEATS = 2
-
-/** 每档难度一个和声窗口内的声部数（简单低音 / 中等三和弦分解 / 高级补内声部） */
-export const ACCOMPANIMENT_VOICES: Record<DifficultyName, number> = {
-  easy: 1,
-  medium: 3,
-  hard: 4,
-}
 
 /** 源曲里参与和声的轨（排除打击轨与空轨），按文件书写顺序 */
 export function melodicTracks(source: SourceSong): readonly number[] {
@@ -86,8 +84,8 @@ function windowVoices(
   minorKey: boolean,
 ): number[] {
   const bass = foldInto(Math.min(...pitches), low, high)
-  const pcs = new Set(pitches.map((midi) => ((midi % 12) + 12) % 12))
-  const rootPc = ((bass % 12) + 12) % 12
+  const pcs = new Set(pitches.map((midi) => pitchClassOfMidi(midi)))
+  const rootPc = pitchClassOfMidi(bass)
   const thirdPc = harmonicThird(rootPc, pcs, minorKey)
   const fifthPc = (rootPc + 7) % 12
 
@@ -108,10 +106,10 @@ function windowVoices(
 /** 低音之上的某个音级（就近取上；放不下则就近取下） */
 function chordTone(pc: number, bass: number, low: number, high: number): number {
   let above = bass + 1
-  while (((above % 12) + 12) % 12 !== pc) above += 1
+  while (pitchClassOfMidi(above) !== pc) above += 1
   if (above <= high) return above
   let below = bass - 1
-  while (((below % 12) + 12) % 12 !== pc) below -= 1
+  while (pitchClassOfMidi(below) !== pc) below -= 1
   return below >= low ? below : above
 }
 
@@ -125,7 +123,7 @@ export function buildAccompaniment(input: AccompanimentInput): readonly Accompan
 
   const { difficulty, beat, grid, shift, duration, registerTop } = input
   const windowSeconds = ACCOMPANIMENT_WINDOW_BEATS * beat
-  const voices = ACCOMPANIMENT_VOICES[difficulty]
+  const voices = ACCOMPANIMENT_PLAN[difficulty].chartVoices
   // 左手音域：旋律最低键之下两个八度（真实钢琴左手的活动范围）
   const low = registerTop - 24
   const high = registerTop - 1
@@ -177,7 +175,7 @@ export function buildAccompaniment(input: AccompanimentInput): readonly Accompan
     for (const pad of planPad({
       from: gap.from,
       to: gap.to,
-      voices: PAD_VOICES[difficulty],
+      voices: padVoices(difficulty),
       registerTop: input.registerTop, // 铺底音域 = 旋律键域之下一个八度
       melody: input.melody,
       third: minorKey ? 'minor' : 'major',

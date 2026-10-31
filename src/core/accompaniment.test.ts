@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
 import type { ChartMeta, DifficultyName } from './chart'
 import { accompanimentPlan } from './accompaniment'
+import { ACCOMPANIMENT_PLAN } from './config'
+import { padVoices } from './pad'
 
 /**
  * 伴奏播放计划（工单 18）：壳层只问「这一局要自动响哪些音」。
@@ -76,5 +78,38 @@ describe('伴奏播放计划（工单 18）', () => {
     })
 
     expect(accompanimentPlan(chart, 'pad')).toEqual([{ at: 0.5, midi: 48 }])
+  })
+
+  it('铺底时刻落在毫秒网格上：与谱面同一张时间轴（roundMs 只此一处）', () => {
+    for (const hit of accompanimentPlan(melodyOnly('hard'), 'pad')) {
+      expect(Math.round(hit.at * 1000) / 1000, `时刻 ${hit.at} 不是毫秒精度`).toBe(hit.at)
+    }
+  })
+})
+
+/**
+ * 分档表（v1.4 两轴审查 C3 / A3）：声部数与力度必须在**一张**表里。
+ * 此前谱面伴奏的 1/3/4 声在 converter 里、合成铺底的 1/2/3 声在 core/pad 里，
+ * 调一档要改两个文件；力度则根本没有——ADR-0016 明写「密度与力度按难度给」。
+ */
+describe('伴奏分档表（唯一一处）', () => {
+  const rows = (['easy', 'medium', 'hard'] as const).map((difficulty) => ({
+    difficulty,
+    ...ACCOMPANIMENT_PLAN[difficulty],
+  }))
+
+  it('声部数随难度递增：谱面伴奏 1 / 3 / 4，铺底 1 / 2 / 3', () => {
+    expect(rows.map((row) => row.chartVoices)).toEqual([1, 3, 4])
+    expect(rows.map((row) => row.padVoices)).toEqual([1, 2, 3])
+    for (const row of rows) expect(padVoices(row.difficulty)).toBe(row.padVoices)
+  })
+
+  it('力度随难度递增：简单最轻（听清旋律），高级最厚，但都低于玩家琴声', () => {
+    expect(rows[0]!.gain).toBeLessThan(rows[1]!.gain)
+    expect(rows[1]!.gain).toBeLessThan(rows[2]!.gain)
+    for (const row of rows) {
+      expect(row.gain, `${row.difficulty} 的力度要留下可听的和声骨架`).toBeGreaterThan(0.4)
+      expect(row.gain, '伴奏不得压过玩家琴声（1.0）').toBeLessThan(0.7)
+    }
   })
 })

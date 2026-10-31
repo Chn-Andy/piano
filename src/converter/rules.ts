@@ -131,10 +131,12 @@ export const SUSTAIN_SECONDS = 0.6
 /**
  * 秒 → 毫秒圆整：谱面时刻统一毫秒精度，保证产物 JSON 确定性
  * （旋律与伴奏共用——两者的时刻必须落在同一张时间轴上）。
+ *
+ * 唯一实现在 `src/core/time.ts`（core/pad.ts 的合成铺底也用同一份：
+ * 铺底若自抄一份圆整，改精度时必只改一处）。此处转出只为保留转换器原有的
+ * 导入路径，新代码请直接引 core/time。
  */
-export function roundMs(t: number): number {
-  return Math.round(t * 1000) / 1000
-}
+export { roundMs } from '../core/time'
 
 /** 起奏预留：谱面首音符不早于此时刻（秒） */
 export const LEAD_IN_SECONDS = 1

@@ -20,12 +20,18 @@ import type { SongEntry } from './charts'
 import type { Chart, DifficultyName, Lane } from './core/chart'
 import { accompanimentPlan } from './core/accompaniment'
 import { comboMultiplierFor } from './core/combat'
-import { PLAYER_MAX_HP } from './core/config'
+import { ACCOMPANIMENT_PLAN, PLAYER_MAX_HP } from './core/config'
 import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
 import { masteryFor, masteryFromRecord, masteryLine, MASTERY_LABELS } from './core/mastery'
 import type { MasteryLevel } from './core/mastery'
-import { replayPlanFor } from './core/replay'
-import type { PlayedNote } from './core/replay'
+import {
+  REPLAY_LABELS,
+  replayActiveAt,
+  replayLabel,
+  replayPlaybackAt,
+  replayPlanFor,
+} from './core/replay'
+import type { PlayedNote, ReplayPlayback } from './core/replay'
 import { midiToNoteName } from './core/pitch'
 import type { KeyBinding, KeyLayout } from './core/keymap'
 import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/records'
@@ -521,12 +527,41 @@ function offsetAdviceLine(summary: BattleSummary): string {
 
 /** 回放专用的音乐支路：接在音乐轨上（同一「琴声音量」），离开结算即断开 */
 let replayBus: GainNode | null = null
-/** 回放起点前的余量：第一颗音也落在音频时间线的未来（防爆音） */
-const REPLAY_LEAD = 0.12
+/**
+ * 本次回放的播放状态（A2）：只存「起点 + 时长」，逐帧按音频时钟判还在不在播。
+ * 旧版把「在播」写成一个只置 true 的布尔量，播完没人复位——按钮永远停在
+ * 「再听一遍」、`__xq.replayPlaying` 永远 true。
+ */
+let replayPlayback: ReplayPlayback | null = null
+/** 按钮上**已经写着**的文案（逐帧同步时不重复写 DOM） */
+let replayLabelShown: string = REPLAY_LABELS.idle
+
+function replayButton(): HTMLButtonElement | null {
+  return overlay.querySelector<HTMLButtonElement>('#btn-replay')
+}
+
+/**
+ * 把播放状态同步到按钮与调试读数（每帧调一次，纯派生）。
+ * 窗口走完即复位：按钮回「听我的演奏」，`replayPlaying` 落回 false。
+ * 自然的收尾**不断开支路**——最后一颗音的尾音还要响完；下一次点播才由
+ * startReplay 里的 stopReplay 断开旧支路。
+ */
+function syncReplayState(): void {
+  const active = replayActiveAt(replayPlayback, engine.now())
+  if (!active) replayPlayback = null
+  const label = replayLabel(active)
+  if (label !== replayLabelShown) {
+    replayLabelShown = label
+    const button = replayButton()
+    if (button !== null) button.textContent = label
+  }
+  debugView.replayPlaying = active
+}
 
 /**
  * 停掉回放：未到期的调度丢掉，已排进音频时间线的采样随支路断开一起失声。
- * 离开结算画面（返回曲库 / 再来一次）时调用——回放只在结算这一刻有效。
+ * 离开结算画面（返回曲库 / 再来一次）时调用——回放只在结算这一刻有效；
+ * 重复点「听我的演奏」也先走这里（先停再放，不叠音）。
  */
 function stopReplay(): void {
   engine.cancelScheduled()
@@ -534,7 +569,8 @@ function stopReplay(): void {
     replayBus.disconnect()
     replayBus = null
   }
-  debugView.replayPlaying = false
+  replayPlayback = null
+  syncReplayState()
 }
 
 /**
@@ -542,6 +578,9 @@ function stopReplay(): void {
  * 玩家命中的音叠在同一窗口的伴奏上一起响；漏掉的音在计划里根本没有，
  * 所以不会响——回放的是真实演奏，不是补全。声音全走对局用过的同一套
  * 钢琴采样与音乐轨增益；不重跑模拟器、不重放怪物动画、不写任何存储。
+ *
+ * 伴奏按对局时的难度力度重放（ACCOMPANIMENT_PLAN 的 gain）：回放听上去
+ * 就是刚才那一遍，而不是把伴奏悄悄推响的另一个混音。
  */
 function startReplay(): void {
   stopReplay()
@@ -554,18 +593,22 @@ function startReplay(): void {
   const bus = engine.context.createGain()
   bus.connect(engine.musicBus)
   replayBus = bus
-  const startAt = engine.now() + REPLAY_LEAD
+  const playback = replayPlaybackAt(engine.now(), plan)
+  replayPlayback = playback
+  const accompanimentGain = ACCOMPANIMENT_PLAN[difficulty].gain
   for (const note of plan.notes) {
     const binding = layout.keys[note.lane]
     if (binding === undefined) continue
-    engine.scheduleAhead(startAt + note.at, (when) => piano.play(binding.note, when, bus))
+    engine.scheduleAhead(playback.startAt + note.at, (when) => piano.play(binding.note, when, bus))
   }
-  for (const chord of plan.accompaniment) {
-    engine.scheduleAhead(startAt + chord.at, (when) => piano.play(midiToNoteName(chord.midi), when, bus))
+  for (const tone of plan.accompaniment) {
+    engine.scheduleAhead(playback.startAt + tone.at, (when) =>
+      piano.play(midiToNoteName(tone.midi), when, bus, accompanimentGain),
+    )
   }
   debugView.replayNotes = plan.notes.length
   debugView.replayMisses = plan.misses
-  debugView.replayPlaying = true
+  syncReplayState()
 }
 
 /**
@@ -627,11 +670,11 @@ function showSettlement(): void {
     </div>`,
   )
   debugView.mastery = mastery === null ? null : MASTERY_LABELS[mastery]
-  overlay.querySelector('#btn-replay')?.addEventListener('click', (ev) => {
-    startReplay()
-    const button = ev.currentTarget
-    if (button instanceof HTMLElement) button.textContent = '再听一遍'
-  })
+  replayPlayback = null // 新的一张演奏卡：回放状态从「未播」开始
+  replayLabelShown = REPLAY_LABELS.idle
+  syncReplayState()
+  // 重复点击走 startReplay 的「先停再放」；按钮文案由 syncReplayState 逐帧同步
+  overlay.querySelector('#btn-replay')?.addEventListener('click', () => startReplay())
   overlay.querySelector('#btn-retry')?.addEventListener('click', () => {
     void beginBattle(song, difficulty)
   })
@@ -698,8 +741,11 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
  */
 function scheduleAccompaniment(): void {
   const hits = accompanimentPlan(chart, song.accompanimentFallback ?? 'none')
+  const gain = ACCOMPANIMENT_PLAN[difficulty].gain
   for (const hit of hits) {
-    engine.scheduleAhead(roundStartAt + hit.at, (when) => piano.play(midiToNoteName(hit.midi), when))
+    engine.scheduleAhead(roundStartAt + hit.at, (when) =>
+      piano.play(midiToNoteName(hit.midi), when, undefined, gain),
+    )
   }
 }
 
@@ -829,7 +875,9 @@ function collectBattle(events: readonly BattleEvent[]): void {
         })
         records = result.records
         improved = result.improved
-        if (improved) saveRecords(storage, records)
+        // 写回的条件是「纪录内容变了」而不是「刷新了评级/连击」：一局零失误
+        // 97% 可能因为连击低而不算新纪录，但它留下的事实（精熟）必须落盘。
+        if (result.updated) saveRecords(storage, records)
       }
       settlement = { rating, improved, mastery }
       // 终章宽限：收势没演完不掀结算幕布（无终章则立即）
@@ -1005,6 +1053,9 @@ function drawBackdrop(): void {
     chart: backdropChart,
     layout: layoutForKeys(backdropChart.meta?.keys ?? []).keys,
     t: performance.now() / 1000,
+    // 背景板不画 HUD（draw(..., true)），进度与句提示不会被读到；给零值即可
+    progress: songProgress(backdropChart, 0),
+    cue: null,
     pending: [],
     combo: 0,
     comboMultiplier: 1,
@@ -1057,6 +1108,8 @@ function frame(): void {
 
   debugView.phase = screen
   debugView.t = t
+  // 结算页：回放窗口按音频时钟走完即复位（A2）。只改按钮文案与读数，不碰画布
+  if (screen === 'ended') syncReplayState()
   debugView.combo = sim.combo
   debugView.sustains = sustains.length
   const summaryNow = sim.summary()
@@ -1068,8 +1121,11 @@ function frame(): void {
   debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
   debugView.qinxinGauge = Number(sim.qinxinGauge.toFixed(3))
   debugView.qinxinReleases = sim.qinxinReleases
-  debugView.progressRatio = Number(songProgress(chart, t).ratio.toFixed(3))
+  // 进度与句提示每帧只算这一次：进度轨（渲染模型的 progress/cue）与调试读数
+  // 读同一份，不各算一遍（v1.4 审查 C1）
+  const progress = songProgress(chart, t)
   const cue = progressCueAt(chart, sustains, t)
+  debugView.progressRatio = Number(progress.ratio.toFixed(3))
   debugView.progressCue =
     cue === null ? null : cue.kind === 'final' ? '最后一句' : `第 ${cue.index} / ${cue.count} 句`
 
@@ -1077,6 +1133,8 @@ function frame(): void {
     chart,
     layout: layout.keys,
     t,
+    progress,
+    cue,
     pending: sim.pendingNotes(),
     combo: sim.combo,
     comboMultiplier: comboMultiplierFor(sim.combo),

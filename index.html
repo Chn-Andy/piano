@@ -467,6 +467,58 @@
           padding: 9px 16px 8px;
         }
       }
+      /* 短窗口（≤ 660px 高）：非结算画面不许裁字（v1.4 审查 A4）。
+         800×600 下曲库内容曾高 628px、底部提示行被裁 28px 且不可滚——方向键
+         被游戏吃掉，键盘滚动指望不上，所以首先把内容收紧到一屏之内；真遇到
+         更矮的窗口，再让面板自己滚（滚轮仍可用），而不是让字掉出视口。 */
+      @media (max-height: 660px) {
+        .screen:not(.settlement) {
+          gap: 11px;
+          padding: 14px 0;
+          max-height: 100vh;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+        }
+        .screen:not(.settlement) h1 {
+          font-size: 48px;
+        }
+        .screen:not(.settlement) h2 {
+          font-size: 23px;
+        }
+        .screen:not(.settlement) .song-list {
+          gap: 7px;
+        }
+        .screen:not(.settlement) .song-row {
+          padding: 7px 14px;
+        }
+        .screen:not(.settlement) .song-name {
+          font-size: 20px;
+        }
+        .screen:not(.settlement) .piano-preview {
+          height: 64px;
+          margin-top: 5px;
+        }
+        .screen:not(.settlement) .pk {
+          top: 20px;
+          height: 42px;
+          line-height: 42px;
+        }
+        .screen:not(.settlement) .pk.black {
+          top: 0;
+          height: 30px;
+          line-height: 30px;
+        }
+        .screen:not(.settlement) .actions {
+          margin-top: 6px;
+        }
+        .screen:not(.settlement) .actions button {
+          padding: 8px 24px;
+          font-size: 16px;
+        }
+        .screen:not(.settlement) .hint {
+          margin-top: 2px;
+        }
+      }
       @media (prefers-reduced-motion: reduce) {
         .screen h1,
         .start-prompt {

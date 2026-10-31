@@ -62,6 +62,15 @@ describe.each(SIZES)('HUD 锚位不重叠 · $label', ({ W, H, whites }) => {
 })
 
 describe('几何函数的共同来源', () => {
+  it('布局按 (W,H,白键数) 记忆化（C1：逐帧不再重建）', () => {
+    const a = hudLayout(800, 600, 12)
+    expect(hudLayout(800, 600, 12), '同一尺寸返回同一对象').toBe(a)
+    expect(hudLayout(800, 600, 7), '白键数变了要重算').not.toBe(a)
+    const wide = hudLayout(1440, 900, 12)
+    expect(hudLayout(1440, 900, 12)).toBe(wide)
+    expect(hudLayout(800, 600, 12), '回到旧尺寸照样是对的布局').toEqual(a)
+  })
+
   it('键区宽度与渲染层同一条公式（白键均分、最宽 104、最窄 38）', () => {
     expect(keyFieldWidth(800, 12)).toBeCloseTo((800 / 13) * 12, 6)
     expect(keyFieldWidth(1440, 7)).toBe(104 * 7)

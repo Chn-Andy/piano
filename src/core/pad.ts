@@ -9,7 +9,10 @@
  */
 
 import type { DifficultyName } from './chart'
+import { ACCOMPANIMENT_PLAN } from './config'
 import { harmonicThird } from './harmony'
+import { pitchClassOfMidi as pcOf } from './pitch'
+import { roundMs } from './time'
 
 /** 铺底音：时刻（谱面时间轴，秒）+ MIDI 音高 */
 export interface PadNote {
@@ -20,11 +23,12 @@ export interface PadNote {
 /** 铺底窗口时长（秒）：两秒一换和声，任意 4 秒窗口必然压着一层铺底 */
 export const PAD_WINDOW_SECONDS = 2
 
-/** 铺底声部数按难度分档：简单根音 / 中等根音+五度 / 高级三和弦（不随表现加厚） */
-export const PAD_VOICES: Record<DifficultyName, 1 | 2 | 3> = {
-  easy: 1,
-  medium: 2,
-  hard: 3,
+/**
+ * 铺底声部数按难度分档（唯一一处：`config.ACCOMPANIMENT_PLAN`，与谱面伴奏的
+ * 声部数、播放力度同表）。简单根音 / 中等根音+五度 / 高级三和弦。
+ */
+export function padVoices(difficulty: DifficultyName): 1 | 2 | 3 {
+  return ACCOMPANIMENT_PLAN[difficulty].padVoices
 }
 
 export interface PadOptions {
@@ -42,11 +46,6 @@ export interface PadOptions {
    * 否则把 a 小调的 C 弹成 C#，和声直接顶住旋律。
    */
   readonly third?: 'major' | 'minor'
-}
-
-/** 音级 （0..11） */
-function pcOf(midi: number): number {
-  return ((midi % 12) + 12) % 12
 }
 
 /**
@@ -92,7 +91,7 @@ export function planPad(options: PadOptions): readonly PadNote[] {
     const chosen = voices === 1 ? [chord[0]!] : voices === 2 ? [chord[0]!, chord[2]!] : chord
     const step = PAD_WINDOW_SECONDS / chosen.length
     for (const [slot, midi] of chosen.entries()) {
-      const at = Math.round((start + slot * step) * 1000) / 1000
+      const at = roundMs(start + slot * step)
       if (at > to) continue
       notes.push({ at, midi })
     }

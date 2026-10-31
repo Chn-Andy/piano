@@ -82,7 +82,27 @@ export interface HudLayout {
   readonly fallingZone: Rect
 }
 
+/**
+ * 布局记忆化（v1.4 审查 C1）：锚位只随 (W, H, 白键数) 变，而渲染每帧都在
+ * 调它——逐帧重建一堆对象没有意义。只缓存最近一档（换分辨率/换曲目时重算
+ * 一次就够，不必背一张表）。
+ */
+let hudCache: { readonly key: string; readonly layout: HudLayout } | null = null
+
+/**
+ * 一帧的全部 HUD 锚位（按尺寸记忆化：同一 (W,H,whites) 返回同一个对象）。
+ * 调用方不得修改返回对象（只读接口）。
+ */
 export function hudLayout(W: number, H: number, whites: number): HudLayout {
+  const key = `${W}×${H}:${whites}`
+  if (hudCache !== null && hudCache.key === key) return hudCache.layout
+  const layout = computeHudLayout(W, H, whites)
+  hudCache = { key, layout }
+  return layout
+}
+
+/** 真正算一遍锚位（纯函数；记忆化外壳见上） */
+function computeHudLayout(W: number, H: number, whites: number): HudLayout {
   const judgeY = H * JUDGE_Y_FRAC
   const zoneY = H * ZONE_Y_FRAC
   const fieldW = keyFieldWidth(W, whites)

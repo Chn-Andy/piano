@@ -19,6 +19,43 @@ import type { JudgmentTier } from './simulator'
 export const REPLAY_SECONDS = 20
 
 /**
+ * 回放起点前的余量（秒）：第一颗音也落在音频时间线的未来，防爆音。
+ * 与演奏时的 PLAY_EPSILON 同一个道理；放在纯层是为了让「回放在哪一刻结束」
+ * 可被测试钉住（A2：播完要复位）。
+ */
+export const REPLAY_LEAD = 0.12
+
+/** 回放按钮的两个文案（票面：先「听我的演奏」，播过一遍后「再听一遍」） */
+export const REPLAY_LABELS = { idle: '听我的演奏', playing: '再听一遍' } as const
+
+/**
+ * 一次回放的播放状态（音频时钟）：壳层只存这一份，逐帧问一句「还在播吗」。
+ * A2 的缺陷就出在这里——此前「在播」是一个只写 true 的布尔量，播完无人复位。
+ */
+export interface ReplayPlayback {
+  /** 排进音频时间线的第一颗音的时刻（音频时钟，秒） */
+  readonly startAt: number
+  /** 实际回放时长（秒，= 计划窗口时长） */
+  readonly duration: number
+}
+
+/** 点下「听我的演奏」那一刻的播放状态：起点 = now + 余量 */
+export function replayPlaybackAt(now: number, plan: ReplayPlan): ReplayPlayback {
+  return { startAt: now + REPLAY_LEAD, duration: Math.max(0, plan.duration) }
+}
+
+/** 播放窗口是否还没走完（终点不含：到点即停）；没在播 → false */
+export function replayActiveAt(playback: ReplayPlayback | null, now: number): boolean {
+  if (playback === null) return false
+  return now < playback.startAt + playback.duration
+}
+
+/** 按钮此刻该写的字：在播「再听一遍」，否则「听我的演奏」 */
+export function replayLabel(active: boolean): string {
+  return active ? REPLAY_LABELS.playing : REPLAY_LABELS.idle
+}
+
+/**
  * 一局演奏记录里的一颗音：壳层每收到一条判定事件就抄一条（内存数组）。
  * `at` 是判定事件自带的时刻（谱面时间轴）——命中的音因此带着玩家当时的
  * 早/晚，回放听得出这是这一遍，而不是节拍器。
@@ -35,8 +72,13 @@ export interface ReplayNote {
   readonly at: number
 }
 
-/** 回放里要发声的一颗伴奏音（`at` 相对回放起点，秒） */
-export interface ReplayChord {
+/**
+ * 回放里要发声的一颗伴奏音（`at` 相对回放起点，秒）。
+ * 名字是「音」不是「和弦」：伴奏在每个时间点上是一**单音**（和弦被分解成
+ * 一串时刻，见 core/pad.ts / converter/accompaniment.ts），与 GLOSSARY 的
+ * 「和弦音符」（同刻多键）不是一回事——旧名 ReplayChord 会让人按和弦去读它。
+ */
+export interface ReplayTone {
   readonly midi: number
   readonly at: number
 }
@@ -51,8 +93,8 @@ export interface ReplayPlan {
   readonly duration: number
   /** 命中的音（升序）；漏掉的不在内 */
   readonly notes: readonly ReplayNote[]
-  /** 窗口内的伴奏（升序） */
-  readonly accompaniment: readonly ReplayChord[]
+  /** 窗口内的伴奏（升序，单音） */
+  readonly accompaniment: readonly ReplayTone[]
   /** 窗口内的终章时刻（相对起点）；窗口里没有终章 → null */
   readonly finaleAt: number | null
   /** 窗口内命中颗数 */
@@ -93,19 +135,19 @@ export function replayPlanFor(
   }
   notes.sort((a, b) => a.at - b.at)
 
-  const chords: ReplayChord[] = []
+  const tones: ReplayTone[] = []
   for (const hit of accompaniment) {
     if (!within(hit.at)) continue
-    chords.push({ midi: hit.midi, at: hit.at - from })
+    tones.push({ midi: hit.midi, at: hit.at - from })
   }
-  chords.sort((a, b) => a.at - b.at)
+  tones.sort((a, b) => a.at - b.at)
 
   return {
     from,
     to,
     duration: to - from,
     notes,
-    accompaniment: chords,
+    accompaniment: tones,
     finaleAt: finaleAt !== null && within(finaleAt) ? finaleAt - from : null,
     hits,
     misses,

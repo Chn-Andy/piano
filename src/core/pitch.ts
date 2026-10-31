@@ -24,6 +24,14 @@ export function pitchClassOf(name: string): number {
   return ((pc % 12) + 12) % 12
 }
 
+/**
+ * 音高数 → 音高级（0..11）。负数的取模在 JS 里会返回负值，这里统一折回
+ * 0..11——伴奏与铺底的音级判断（根音 / 三度 / 五度）都用这一处。
+ */
+export function pitchClassOfMidi(midi: number): number {
+  return ((midi % 12) + 12) % 12
+}
+
 /** 音高数 → 升号拼写的音高级名（61 → 'C#'） */
 const PC_TO_SHARP_NAME = [
   'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',

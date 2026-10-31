@@ -48,12 +48,18 @@ export function masteryFor(facts: MasteryFacts): MasteryLevel | null {
 /**
  * 从本机纪录读掌握度（曲库徽记用）。
  *
- * 纪录只由胜局写入，所以这里恒按胜局判。旧版纪录没有精度与失误数：不猜值——
- * 缺 `missCount` 视作「够不上零失误」，缺 `accuracy` 视作 0，于是判档自然
- * 降级为**只能到弹熟**（评级 A/S 仍算弹熟，S 不会被猜成精熟）。
+ * 纪录只由胜局写入，所以这里恒按胜局判。判据分两层：
+ * - **精熟**读纪录的单调最佳事实 `flawlessAccuracy`（历次零失误局的最高精度，
+ *   与评级/连击无关）。只用它、不拼 `accuracy` + `missCount`：后者描述的是
+ *   「刷新评级/连击的那一局」，而一局零失误 97% 完全可能因为连击低而不入册
+ *   （A1 的原始缺陷：精熟在曲库里不可达）。
+ * - **弹熟/初演**沿用评级；旧版纪录没有 `flawlessAccuracy`，也不猜值——
+ *   缺字段视作「没有零失误事实」，评级 A/S 仍算弹熟，S 不会被猜成精熟。
  */
 export function masteryFromRecord(record: BestRecord | undefined): MasteryLevel | null {
   if (record === undefined) return null
+  const flawless = record.flawlessAccuracy
+  if (flawless !== undefined && flawless >= MASTERY.MASTERED_ACCURACY) return 'mastered'
   return masteryFor({
     outcome: 'victory',
     rating: record.rating,

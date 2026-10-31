@@ -13,7 +13,7 @@
  */
 
 import type { Chart } from './chart'
-import { PAD_VOICES, planPad } from './pad'
+import { padVoices, planPad } from './pad'
 import { noteNameToMidi } from './pitch'
 
 /** 一个要自动演奏的伴奏音（at = 谱面时间轴秒，midi = 音高） */
@@ -54,7 +54,7 @@ export function accompanimentPlan(
   return planPad({
     from: 0,
     to: chart.duration,
-    voices: PAD_VOICES[meta.difficulty],
+    voices: padVoices(meta.difficulty),
     registerTop: noteNameToMidi(meta.keys[0]!),
     melody: soundingMelody(chart),
   })

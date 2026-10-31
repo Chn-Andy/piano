@@ -70,3 +70,44 @@ describe('掌握度：从本机纪录读', () => {
     expect(MASTERY_LABELS.none).toBe('未入册')
   })
 })
+
+/**
+ * 精熟在曲库里可达（v1.4 两轴审查 A1）。
+ *
+ * 缺陷原状：`recordResult` 只在评级/连击更优时写纪录，于是「零失误 + 精度
+ * 97% 但连击较低」的一局根本不入册，徽记永远停在弹熟。修法：纪录存一条
+ * 单调最佳事实 `flawlessAccuracy`，判档读它——但绝不把两个不同局拼起来。
+ */
+describe('掌握度：精熟可达且不回退（A1）', () => {
+  it('一局零失误 97% 的 A 级成绩就够精熟（评级不是 S 也行）', () => {
+    expect(masteryFromRecord({ rating: 'A', maxCombo: 90, accuracy: 0.97, missCount: 0, flawlessAccuracy: 0.97 })).toBe(
+      'mastered',
+    )
+  })
+
+  it('随后一局评级更高但精度低、有失误：徽记仍是精熟（单调事实不随纪录主体回退）', () => {
+    const record = {
+      rating: 'S' as const,
+      maxCombo: 40,
+      accuracy: 0.5,
+      missCount: 5,
+      flawlessAccuracy: 0.97,
+    }
+    expect(masteryFromRecord(record)).toBe('mastered')
+  })
+
+  it('零失误但精度不足 90%：只到弹熟（事实本身不达标）', () => {
+    expect(masteryFromRecord({ rating: 'A', maxCombo: 90, accuracy: 0.85, missCount: 0, flawlessAccuracy: 0.85 })).toBe(
+      'seasoned',
+    )
+  })
+
+  it('旧格式纪录不猜值：只有评级与连击 → 弹熟（S 不冒充精熟）', () => {
+    expect(masteryFromRecord({ rating: 'S', maxCombo: 82 })).toBe('seasoned')
+  })
+
+  it('纪录里的精度与失误数描述同一局：零失误 99% 可判精熟，有失误再准也只到弹熟', () => {
+    expect(masteryFromRecord({ rating: 'S', maxCombo: 82, accuracy: 0.99, missCount: 0 })).toBe('mastered')
+    expect(masteryFromRecord({ rating: 'S', maxCombo: 82, accuracy: 0.99, missCount: 3 })).toBe('seasoned')
+  })
+})

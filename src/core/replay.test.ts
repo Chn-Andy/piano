@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { REPLAY_SECONDS, replayPlanFor } from './replay'
+import { REPLAY_LEAD, REPLAY_LABELS, REPLAY_SECONDS, replayActiveAt, replayLabel, replayPlaybackAt, replayPlanFor } from './replay'
 import type { PlayedNote } from './replay'
 
 /**
@@ -76,5 +76,55 @@ describe('回放裁剪', () => {
     expect(replayPlanFor([], [], 175, 170).finaleAt).toBe(15)
     expect(replayPlanFor([], [], 175, 175).finaleAt).toBe(20)
     expect(replayPlanFor([], [], 175, 151).finaleAt).toBe(null)
+  })
+})
+
+/**
+ * 回放播放状态（v1.4 两轴审查 A2）。
+ *
+ * 缺陷原状：`__xq.replayPlaying` 是一个只置 true 的布尔量，20 秒放完也没人
+ * 复位，按钮永远停在「再听一遍」。修法：壳层存一份「起点 + 时长」，逐帧按
+ * 音频时钟问 `replayActiveAt`——判据在这里钉住，壳层只负责照写。
+ */
+describe('回放播放状态与复位（A2）', () => {
+  /** 常规范例：20 秒窗口 */
+  const plan = replayPlanFor([], [], 175, null)
+
+  it(`起点比点击晚 ${REPLAY_LEAD} 秒：第一颗音落在音频时间线的未来`, () => {
+    const playback = replayPlaybackAt(100, plan)
+    expect(playback.startAt).toBeCloseTo(100 + REPLAY_LEAD, 9)
+    expect(playback.duration).toBe(REPLAY_SECONDS)
+  })
+
+  it('窗口内为 true，到点即为 false（终点不含）——播完必须复位', () => {
+    const playback = replayPlaybackAt(100, plan)
+    const end = playback.startAt + REPLAY_SECONDS
+    expect(replayActiveAt(playback, 100)).toBe(true)
+    expect(replayActiveAt(playback, end - 0.001)).toBe(true)
+    expect(replayActiveAt(playback, end)).toBe(false)
+    expect(replayActiveAt(playback, end + 60)).toBe(false)
+    expect(replayActiveAt(null, 100), '没在播 → 不亮').toBe(false)
+  })
+
+  it('按钮文案随状态走：未播 / 播完读「听我的演奏」，在播读「再听一遍」', () => {
+    expect(replayLabel(false)).toBe('听我的演奏')
+    expect(replayLabel(true)).toBe('再听一遍')
+    expect(REPLAY_LABELS.idle).toBe(replayLabel(false))
+    expect(REPLAY_LABELS.playing).toBe(replayLabel(true))
+  })
+
+  it('不足 20 秒的短局按实际窗口结束（不会永远「在播」）', () => {
+    const short = replayPlanFor([], [], 8, null)
+    const playback = replayPlaybackAt(50, short)
+    expect(playback.duration).toBe(8)
+    expect(replayActiveAt(playback, playback.startAt + 8.05)).toBe(false)
+  })
+
+  it('重复点击换一份新状态（先停再放）：两份互不牵连，旧窗口到点不影响新的', () => {
+    const first = replayPlaybackAt(100, plan)
+    const second = replayPlaybackAt(112, plan)
+    expect(second.startAt).toBeGreaterThan(first.startAt)
+    expect(replayActiveAt(first, first.startAt + REPLAY_SECONDS)).toBe(false)
+    expect(replayActiveAt(second, first.startAt + REPLAY_SECONDS), '第二遍还在播').toBe(true)
   })
 })
