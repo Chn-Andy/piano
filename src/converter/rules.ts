@@ -128,21 +128,20 @@ export const CHORD_SOURCE_WINDOW = 0.05
 /** 余韵窗口时长（秒，ADR-0007：约 0.5–1s） */
 export const SUSTAIN_SECONDS = 0.6
 
+/**
+ * 秒 → 毫秒圆整：谱面时刻统一毫秒精度，保证产物 JSON 确定性
+ * （旋律与伴奏共用——两者的时刻必须落在同一张时间轴上）。
+ */
+export function roundMs(t: number): number {
+  return Math.round(t * 1000) / 1000
+}
+
 /** 起奏预留：谱面首音符不早于此时刻（秒） */
 export const LEAD_IN_SECONDS = 1
 
-/** 音名字母 → 音高级（pitch class） */
-const ROOT_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
-
 /**
  * 解析音名（如 'C4'、'F#4'、'Bb3'）为 MIDI 音高数（C4 = 60）。
- * 键位布局与移调计算的共用工具。
+ * 唯一的换算实现在 src/core/pitch.ts（伴奏声部与谱面契约同用），此处转出
+ * 只为保留转换器原有的导入路径。
  */
-export function noteNameToMidi(name: string): number {
-  const match = /^([A-G])(#|b)?(-?\d+)$/.exec(name)
-  if (match === null) throw new Error(`无法解析音名：${name}`)
-  let pc = ROOT_PC[match[1]!]!
-  if (match[2] === '#') pc += 1
-  if (match[2] === 'b') pc -= 1
-  return (Number(match[3]) + 1) * 12 + pc
-}
+export { noteNameToMidi } from '../core/pitch'

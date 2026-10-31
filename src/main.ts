@@ -17,9 +17,11 @@ import { Piano } from './audio/piano'
 import { DIFFICULTY_LABELS, SONGS, songById } from './charts'
 import type { SongEntry } from './charts'
 import type { Chart, DifficultyName, Lane } from './core/chart'
+import { accompanimentPlan } from './core/accompaniment'
 import { comboMultiplierFor } from './core/combat'
 import { PLAYER_MAX_HP } from './core/config'
 import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
+import { midiToNoteName } from './core/pitch'
 import type { KeyBinding, KeyLayout } from './core/keymap'
 import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/records'
 import type { KeyValueStore, Records } from './core/records'
@@ -351,7 +353,7 @@ function showSettings(): void {
         <div class="setting-row">
           <label for="sl-sfx">战斗音效音量 <b id="sfx-value">${pct(settings.sfxVolume)}</b></label>
           <input id="sl-sfx" type="range" min="0" max="100" step="1" value="${Math.round(settings.sfxVolume * 100)}">
-          <p class="hint">琴声是你弹出的钢琴（音乐轨）；剑气、受击、余韵等是战斗音效（音效轨），两轨独立调节。</p>
+          <p class="hint">琴声是你弹出的钢琴与自动伴奏（音乐轨）；剑气、受击、余韵等是战斗音效（音效轨），两轨独立调节。</p>
         </div>
       </div>
       <div class="actions">
@@ -559,7 +561,24 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
     if (monster.kind !== 'inkLord') continue
     engine.scheduleAhead(roundStartAt + monster.spawnAt, (w) => engine.lordEntrance(w))
   }
+  scheduleAccompaniment()
   if (AUTO === 'perfect') scheduleAutoplay()
+}
+
+/**
+ * 伴奏声部（工单 18，ADR-0016）：整首的和声骨架经 lookahead 调度器提前排进
+ * 音乐轨，与琴声共用「琴声音量」（同一 Piano → musicBus，故该滑条对两者一并
+ * 生效，调到 0 时一起静音、战斗音效不受影响）。
+ *
+ * 它**不**经过按键管线：不模拟按键、不进模拟器、不产生判定与战斗事件，
+ * 因此漏掉的音不会被补上——旋律永远只在你按键时响。卡农没有伴奏声部字段，
+ * 由曲目声明走合成低频铺底（同一个调度器、同一套钢琴采样）。
+ */
+function scheduleAccompaniment(): void {
+  const hits = accompanimentPlan(chart, song.accompanimentFallback ?? 'none')
+  for (const hit of hits) {
+    engine.scheduleAhead(roundStartAt + hit.at, (when) => piano.play(midiToNoteName(hit.midi), when))
+  }
 }
 
 /** 开发钩子：按谱面时刻精确自动弹奏（经 lookahead 调度走同一按键管线） */

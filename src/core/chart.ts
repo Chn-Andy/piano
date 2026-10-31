@@ -1,3 +1,5 @@
+import { noteNameToMidi } from './pitch'
+
 /**
  * 谱面（Chart）：一首歌在某难度下的全部音符及其时刻的编排。
  * 这是项目的核心数据契约（SPEC-0001），在工单 01 的最小谱面（音符 + 时长）上
@@ -72,6 +74,18 @@ export interface Phrase {
   readonly sustainEnd: number
 }
 
+/**
+ * 伴奏声部音符（GLOSSARY：伴奏声部 / ADR-0016）：游戏自动演奏的和声骨架音。
+ * 只有时刻与音高——它不映射键位、不进判定、不产生战斗事件，只负责让曲子
+ * 在玩家漏音时仍然成立；旋律音永远只由玩家按键发出（不代弹）。
+ */
+export interface AccompanimentNote {
+  /** 发声时刻（秒，与 ChartNote.time 同域：谱面时间轴） */
+  readonly time: number
+  /** MIDI 音高（不经键位映射：伴奏在音频层直接发声） */
+  readonly midi: number
+}
+
 export interface Chart {
   readonly notes: readonly ChartNote[]
   /** 谱面终点（最后一个音符时刻 + 收尾余量，秒） */
@@ -80,6 +94,11 @@ export interface Chart {
   readonly meta?: ChartMeta
   /** 乐句边界（工单 02 扩展；省略时谱面无乐句结构） */
   readonly phrases?: readonly Phrase[]
+  /**
+   * 伴奏声部（工单 18 扩展；省略时该谱面无伴奏——旧谱面照旧可用）。
+   * 由转换器从源曲的非主旋律材料确定性生成，时刻升序。
+   */
+  readonly accompaniment?: readonly AccompanimentNote[]
 }
 
 /** 谱面收尾余量：最后一个音符之后仍视为"演奏中"的时长。 */
@@ -106,6 +125,7 @@ export interface ChartJson {
   }[]
   readonly meta?: ChartMeta
   readonly phrases?: readonly Phrase[]
+  readonly accompaniment?: readonly AccompanimentNote[]
 }
 
 /** JSON → Chart：唯一的读入路径（与 createChart 共用全部不变式校验） */
@@ -115,14 +135,16 @@ export function chartFromJson(json: ChartJson): Chart {
     {
       ...(json.meta !== undefined ? { meta: json.meta } : {}),
       ...(json.phrases !== undefined ? { phrases: json.phrases } : {}),
+      ...(json.accompaniment !== undefined ? { accompaniment: json.accompaniment } : {}),
     },
   )
 }
 
-/** 完整谱面选项：元数据与乐句（提供即校验）。 */
+/** 完整谱面选项：元数据、乐句与伴奏声部（提供即校验）。 */
 export interface ChartOptions {
   readonly meta?: ChartMeta
   readonly phrases?: readonly Phrase[]
+  readonly accompaniment?: readonly AccompanimentNote[]
 }
 
 /**
@@ -151,11 +173,57 @@ export function createChart(
 
   const last = sorted.length > 0 ? sorted[sorted.length - 1]![0] : 0
   const duration = last + TAIL_SECONDS
+  const accompaniment = options?.accompaniment
+  if (accompaniment !== undefined) validateAccompaniment(accompaniment, notes, meta, duration)
   return {
     notes,
     duration,
     ...(meta !== undefined ? { meta } : {}),
     ...(phrases !== undefined ? { phrases } : {}),
+    ...(accompaniment !== undefined ? { accompaniment } : {}),
+  }
+}
+
+/**
+ * 伴奏声部校验（工单 18，ADR-0016 的两条硬边界）：
+ * - 时刻落在曲内、音高是合法 MIDI 值、时刻升序（产物可逐字节序列化）；
+ * - **不代弹**：伴奏不得在旋律发声的同一时刻发出同一音高——旋律永远只属于
+ *   玩家，伴奏替它响一次，Perfect/Good/Miss 的听觉反馈就断了。
+ * 旋律的"实际音高"由 meta.keys[lane] 决定（钢琴按键名发声，见 main.ts），
+ * 故此处按键名折算 MIDI；无 meta 的手写谱面无法折算，只校验前一条。
+ */
+function validateAccompaniment(
+  accompaniment: readonly AccompanimentNote[],
+  notes: readonly ChartNote[],
+  meta: ChartMeta | undefined,
+  duration: number,
+): void {
+  let previous = Number.NEGATIVE_INFINITY
+  for (const note of accompaniment) {
+    if (!Number.isFinite(note.time) || note.time < 0 || note.time > duration) {
+      throw new Error(`伴奏音的时刻 ${note.time} 越出曲内 [0, ${duration}]`)
+    }
+    if (!Number.isInteger(note.midi) || note.midi < 0 || note.midi > 127) {
+      throw new Error(`伴奏音的音高 ${note.midi} 不是合法 MIDI 值（0..127 的整数）`)
+    }
+    if (note.time < previous) {
+      throw new Error(`伴奏音必须按时刻升序排列：${note.time} 出现在 ${previous} 之后`)
+    }
+    previous = note.time
+  }
+  if (meta === undefined) return
+  const melody = new Set<string>()
+  for (const note of notes) {
+    const key = meta.keys[note.lane]
+    if (key === undefined) continue
+    melody.add(`${note.time}|${noteNameToMidi(key)}`)
+  }
+  for (const note of accompaniment) {
+    if (melody.has(`${note.time}|${note.midi}`)) {
+      throw new Error(
+        `伴奏音 ${note.midi} 在时刻 ${note.time} 与旋律同刻同音高：伴奏不得代弹旋律（ADR-0016）`,
+      )
+    }
   }
 }
 

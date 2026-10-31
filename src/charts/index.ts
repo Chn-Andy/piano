@@ -14,6 +14,12 @@ export interface SongEntry {
   readonly title: string
   readonly blurb: string
   readonly charts: Record<DifficultyName, Chart>
+  /**
+   * 谱面没有伴奏声部字段时的兜底（ADR-0016）：'pad' = 合成低频铺底。
+   * 只有卡农需要——它的源 MIDI 单轨、没有可拆的和声材料，而替换 fixture
+   * 会改变谱面密度、连带重新定标（票面明确不做）。
+   */
+  readonly accompanimentFallback?: 'pad'
 }
 
 /** 难度中文名（GLOSSARY：难度） */
@@ -30,6 +36,7 @@ export const SONGS: readonly SongEntry[] = [
     title: '卡农',
     blurb: '入门 · 帕赫贝尔',
     charts: CANON_CHARTS,
+    accompanimentFallback: 'pad',
   },
   {
     id: 'fur-elise',
