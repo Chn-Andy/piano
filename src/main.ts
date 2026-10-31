@@ -39,7 +39,7 @@ import type { KeyValueStore, Records } from './core/records'
 import { accuracyFor, offsetAdvice, ratingFor } from './core/rating'
 import type { Rating } from './core/rating'
 import { CUE_LIFE, finaleAtOf, formatClock, progressCueAt, progressLine, songProgress } from './core/progress'
-import type { OutcomeReason } from './core/progress'
+import type { OutcomeReason, SongProgress } from './core/progress'
 import { judgedTime, loadSettings, saveSettings } from './core/settings'
 import type { Settings } from './core/settings'
 import { Simulator } from './core/simulator'
@@ -1045,6 +1045,16 @@ function prune(t: number): void {
   }
 }
 
+/** 背景板的进度读数缓存（按谱面对象记忆化；见 drawBackdrop） */
+let backdropProgress: { readonly chart: Chart; readonly progress: SongProgress } | null = null
+
+function backdropProgressFor(target: Chart): SongProgress {
+  if (backdropProgress === null || backdropProgress.chart !== target) {
+    backdropProgress = { chart: target, progress: songProgress(target, 0) }
+  }
+  return backdropProgress.progress
+}
+
 /** 非战斗画面的背景板：所选谱面的空音场（键位轨道与判定线，无音符无怪物） */
 function drawBackdrop(): void {
   const backdropChart =
@@ -1053,8 +1063,9 @@ function drawBackdrop(): void {
     chart: backdropChart,
     layout: layoutForKeys(backdropChart.meta?.keys ?? []).keys,
     t: performance.now() / 1000,
-    // 背景板不画 HUD（draw(..., true)），进度与句提示不会被读到；给零值即可
-    progress: songProgress(backdropChart, 0),
+    // 背景板不画 HUD（draw(..., true)），进度与句提示不会被读到；给零值即可。
+    // 按谱面记忆化：换曲/换难度才重算，菜单每帧不再重建（C1 的同一条口径）
+    progress: backdropProgressFor(backdropChart),
     cue: null,
     pending: [],
     combo: 0,
