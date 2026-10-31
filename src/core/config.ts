@@ -342,3 +342,13 @@ export const RATING = {
   /** 平均偏差建议的最小样本（命中数）：命中太少时平均值没有意义，不报 */
   OFFSET_ADVICE_MIN_HITS: 8,
 } as const
+
+/* ── 掌握度（票 19，GLOSSARY：掌握度）──
+ * 三档判定（mastery.ts）：初演＝活着弹完全曲（胜局即得）；弹熟＝评级 ≥ A；
+ * 精熟＝本局零失误且精度 ≥ MASTERED_ACCURACY。它只是「这一局发生过什么」的
+ * 读数——不是分数、不进排行、不改任何战斗数值。
+ */
+export const MASTERY = {
+  /** 精熟的精度门槛（边界含；另需本局零失误） */
+  MASTERED_ACCURACY: 0.9,
+} as const

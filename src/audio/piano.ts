@@ -82,8 +82,12 @@ export class Piano {
    * 弹奏一个音名（如 'F#4'）——音频随谱面键位布局走（工单 03 起
    * 不再限于白键八度）。when 为音频时钟上的发声时刻（ADR-0010）；
    * 调用方通常传 now + 微小 ε，把声音放到音频时间线的未来，避免爆音。
+   *
+   * destination 默认仍是音乐轨（`musicBus`，受「琴声音量」控制）；票 19 的
+   * 结算回放传一条一次性的支路——离开结算画面时把那条支路 disconnect，
+   * 已经排出去的采样就整体失声（回放只在结算这一刻有效，见 ADR/spec v1.4）。
    */
-  play(note: string, when: number): void {
+  play(note: string, when: number, destination: AudioNode = this.destination()): void {
     const semitones = semitonesFromC4(note)
 
     let native = NATIVE_SAMPLES[0]!
@@ -99,7 +103,7 @@ export class Piano {
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.playbackRate.value = 2 ** ((semitones - native.semitones) / 12)
-    source.connect(this.destination())
+    source.connect(destination)
     source.start(when)
   }
 }
