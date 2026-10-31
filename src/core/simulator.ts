@@ -304,8 +304,8 @@ export class Simulator {
   /** 命中偏差累加（秒，正=迟）与命中数——结算的平均偏差（工单 15） */
   private offsetSum = 0
   private offsetHits = 0
-  /** 琴心已蓄的命中数（工单 10；蓄能进度 = 它 / CHARGE_COMBOS） */
-  private qinxinHits = 0
+  /** 已蓄的命中数（0..CHARGE_COMBOS−1；蓄能进度 = 它 / CHARGE_COMBOS） */
+  private chargeHits = 0
   /** 已释放的琴心通明次数 */
   private qinxinCount = 0
 
@@ -352,7 +352,16 @@ export class Simulator {
 
   /** 琴心蓄能进度（0..1；HUD 蓄能槽与测试读数） */
   get qinxinGauge(): number {
-    return this.qinxinHits / QINXIN.CHARGE_COMBOS
+    return this.chargeHits / QINXIN.CHARGE_COMBOS
+  }
+
+  /**
+   * 已蓄的命中数（0..CHARGE_COMBOS−1）——HUD 读数「17/30」用的整数。
+   * 与 `qinxinGauge` 同源，但读数必须走整数：0.9666…×30 在浮点下取整会
+   * 时对时错，而玩家看到的是「还差几击」这种绝不能错的数。
+   */
+  get qinxinHits(): number {
+    return this.chargeHits
   }
 
   /** 已释放的琴心通明次数 */
@@ -790,9 +799,9 @@ export class Simulator {
    * 长连击里连放两炮是应有的回报。
    */
   private chargeQinxin(time: number): void {
-    this.qinxinHits += 1
-    while (this.qinxinHits >= QINXIN.CHARGE_COMBOS) {
-      this.qinxinHits -= QINXIN.CHARGE_COMBOS
+    this.chargeHits += 1
+    while (this.chargeHits >= QINXIN.CHARGE_COMBOS) {
+      this.chargeHits -= QINXIN.CHARGE_COMBOS
       this.releaseQinxin(time)
     }
   }

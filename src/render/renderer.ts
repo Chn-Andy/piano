@@ -16,7 +16,7 @@
 
 import type { Chart, ChartNote, Lane, NoteTint } from '../core/chart'
 import { depthAt } from '../core/combat'
-import { BATTLEFIELD, JUDGMENT_WINDOWS } from '../core/config'
+import { BATTLEFIELD, JUDGMENT_WINDOWS, QINXIN } from '../core/config'
 import { TINT_LABELS } from '../core/tints'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
@@ -116,6 +116,8 @@ export interface RenderModel {
   readonly tints: readonly TintFeedback[]
   /** 琴心蓄能进度（0..1；HUD 蓄能槽） */
   readonly qinxinGauge: number
+  /** 琴心已蓄的命中数（0..CHARGE_COMBOS−1）——HUD 读数「17/30」的分子 */
+  readonly qinxinHits: number
   /** 最近的琴心通明（战场区墨爆） */
   readonly qinxins: readonly QinxinFeedback[]
   /* ── 余韵（工单 04）：近期余韵事件（含终章），渲染纯函数式消费 ── */
@@ -133,6 +135,21 @@ const SWEEP_LIFE = 0.34 // AoE 剑气扫场纵深（秒）
 /** 琴心（工单 10）：青碧色与墨爆存续——刻意与余韵的墨黑、终章的朱砂分开 */
 const QINXIN_COLOR = '#3f6b63'
 const QINXIN_LIFE = 0.85
+
+/* ── HUD 锚位（工单 16）：状态一律压进下半区 ──────────────────────────
+ * 玩家的视线全程钉在下落音符与判定线上。旧版把血条贴在屏幕最顶边（8px
+ * 通栏）、把琴心槽收在左上角（240×9）：玩家玩了两周，说「我的血条在哪」
+ * 「特殊技能的进度看不到了」——条画在顶边，注意力在底边，等于没画。
+ * 现在：气血条贴底通栏，琴心蓄能沿左右两条边缘竖直生长（竖直条在余光
+ * 里比横条更容易扫到），读数印在槽顶。
+ */
+const HUD_SIDE_INSET = 16 // 左右蓄能槽离屏幕边缘的距离
+const HUD_SIDE_WIDTH = 20 // 蓄能槽宽度（竖直条）
+const HUD_SIDE_TOP_FRAC = 0.5 // 蓄能槽顶端（屏高比例）
+const HUD_SIDE_BOTTOM_GAP = 26 // 蓄能槽底端离判定线的距离
+const HUD_HP_HEIGHT = 18 // 气血条厚度
+const HUD_HP_BOTTOM = 24 // 气血条下沿离屏幕底边的距离
+const HUD_SMALL = 13 // HUD 标签与读数的小字字号
 /** 纵深 → 战场纵向几何：琴阵线（怪物停驻处）与战场最深处（生成处） */
 const LINE_INSET = 46 // 琴阵线在下落区分界线之上的距离（px）
 const FAR_Y_FRAC = 0.16 // 战场最深处的高度（占屏比）
@@ -1223,55 +1240,18 @@ export class Renderer {
     ctx.restore()
   }
 
-  /** HUD：玩家 HP 条（顶边）、连击与倍率、判定闪示、倒计时、挨打红晕 */
+  /** HUD：底部气血条、左右琴心蓄能、连击与倍率、判定闪示、倒计时、挨打红晕 */
   private drawHud(
     m: RenderModel,
-    geom: { lanes: readonly LaneGeom[] },
+    geom: { lanes: readonly LaneGeom[]; fieldW: number },
     W: number,
     H: number,
     judgeY: number,
   ): void {
     const { ctx } = this
 
-    // 玩家 HP：屏幕顶边通栏，永远在余光里；朱砂只留一条细芯，减少「贴边红条」的突兀感
-    const hpFrac = Math.max(0, m.playerHp / m.playerMaxHp)
-    const hpPulse = 0.92 + 0.08 * Math.sin(m.t * 2.2)
-    ctx.fillStyle = 'rgba(160,61,44,0.12)'
-    ctx.fillRect(0, 0, W, 8)
-    if (hpFrac > 0) {
-      ctx.fillStyle = `rgba(160,61,44,${(0.78 + 0.12 * hpPulse).toFixed(3)})`
-      ctx.fillRect(0, 0, W * hpFrac, 8)
-      ctx.fillStyle = `rgba(250,247,239,${(0.34 * hpPulse).toFixed(3)})`
-      ctx.fillRect(0, 0, W * hpFrac, 1)
-    }
-
-    // 琴心蓄能槽（工单 10）：HP 条底下一条青碧细槽——余光可读，满格即放
-    const gaugeW = Math.min(240, W * 0.22)
-    const gaugeH = 9
-    const gaugeX = 18
-    const gaugeY = 20
-    const gaugeFrac = Math.max(0, Math.min(1, m.qinxinGauge))
-    ctx.fillStyle = 'rgba(63,107,99,0.16)'
-    this.roundRect(gaugeX, gaugeY, gaugeW, gaugeH, 5)
-    ctx.fill()
-    if (gaugeFrac > 0) {
-      ctx.fillStyle = QINXIN_COLOR
-      this.roundRect(gaugeX, gaugeY, gaugeW * gaugeFrac, gaugeH, 5)
-      ctx.fill()
-    }
-    // 快满时的一记呼吸：槽要满了，肉眼能提前看到
-    if (gaugeFrac > 0.82) {
-      ctx.globalAlpha = 0.2 + 0.2 * (0.5 + 0.5 * Math.sin(m.t * 9))
-      ctx.fillStyle = QINXIN_COLOR
-      this.roundRect(gaugeX, gaugeY, gaugeW * gaugeFrac, gaugeH, 5)
-      ctx.fill()
-      ctx.globalAlpha = 1
-    }
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.font = '400 12px ' + SERIF
-    ctx.fillStyle = 'rgba(63,107,99,0.9)'
-    ctx.fillText('琴心', gaugeX + gaugeW + 10, gaugeY + gaugeH / 2)
+    this.drawHpBar(m, geom, W, H, judgeY)
+    this.drawQinxinSlots(m, W, H, judgeY)
 
     // 被咬反馈：判定区上缘泛红渐隐（眼皮底下的警报——血量只在被咬时下降）
     for (const b of m.bites) {
@@ -1369,6 +1349,149 @@ export class Renderer {
       ctx.fillStyle = INK
       ctx.fillText(numeral, W / 2, H * 0.42)
       ctx.globalAlpha = 1
+    }
+  }
+
+  /**
+   * 气血条（工单 16）：贴着屏幕下缘的通栏。玩家的视线在判定线与下落音符上，
+   * 血条就得落在同一个视区里——旧版那条挂在屏幕最顶边，等于画在身后。
+   * 条厚 HUD_HP_HEIGHT、左端「气血」、右端当前/上限，挨咬的瞬间整条提亮
+   * 一下（伤害与条同框，不必回头找）；三成以下加一道呼吸的朱砂描边。
+   */
+  private drawHpBar(
+    m: RenderModel,
+    geom: { fieldW: number },
+    W: number,
+    H: number,
+    judgeY: number,
+  ): void {
+    const { ctx } = this
+    const frac = Math.max(0, Math.min(1, m.playerHp / m.playerMaxHp))
+    const low = frac <= 0.3
+    const pulse = 0.86 + 0.14 * Math.sin(m.t * (low ? 6.5 : 2.2))
+    // 挨咬的瞬间（BITE_LIFE 内）整条提亮：脚下的警报与条是同一个信号
+    const bitten = m.bites.some((b) => m.t - b.at >= 0 && m.t - b.at < BITE_LIFE)
+
+    const barW = Math.min(geom.fieldW, W * 0.5)
+    const barX = (W - barW) / 2
+    const h = HUD_HP_HEIGHT
+    // 窗口很矮时不许压到键位标签：至少落在键位下方 58px
+    const y = Math.max(judgeY + 58, H - HUD_HP_BOTTOM - h)
+    const filledW = Math.max(h, barW * frac)
+
+    ctx.fillStyle = 'rgba(55,50,42,0.1)'
+    this.roundRect(barX, y, barW, h, h / 2)
+    ctx.fill()
+
+    if (frac > 0) {
+      const alpha = Math.min(1, pulse + (bitten ? 0.14 : 0))
+      ctx.fillStyle = `rgba(160,61,44,${alpha.toFixed(3)})`
+      this.roundRect(barX, y, filledW, h, h / 2)
+      ctx.fill()
+      // 纸色高光：条面上沿一道细光，读作湿墨
+      ctx.fillStyle = `rgba(250,247,239,${(0.3 * pulse).toFixed(3)})`
+      this.roundRect(barX + 4, y + 2, Math.max(2, filledW - 8), 2, 1)
+      ctx.fill()
+    }
+
+    if (low) {
+      ctx.globalAlpha = 0.32 + 0.34 * (0.5 + 0.5 * Math.sin(m.t * 6.5))
+      ctx.strokeStyle = BLOOD
+      ctx.lineWidth = 2
+      this.roundRect(barX - 3, y - 3, barW + 6, h + 6, (h + 6) / 2)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+
+    // 标签与读数：条上方两端（矮窗口里夹在键位与血条之间）
+    const labelY = Math.max(y - 8, judgeY + 46)
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = `400 ${HUD_SMALL}px ${SERIF}`
+    ctx.textAlign = 'left'
+    ctx.fillStyle = low ? BLOOD : 'rgba(160,61,44,0.85)'
+    ctx.fillText('气血', barX, labelY)
+    ctx.textAlign = 'right'
+    ctx.fillStyle = low ? BLOOD : 'rgba(55,50,42,0.62)'
+    ctx.fillText(
+      `${Math.max(0, Math.round(m.playerHp))} / ${m.playerMaxHp}`,
+      barX + barW,
+      labelY,
+    )
+  }
+
+  /**
+   * 琴心蓄能（工单 10 / 16）：屏幕左右边缘各一条竖直槽，自下而上充能。
+   * 竖直条是余光里最好扫到的形状，左右各一条则两边视线都能接住；玩家问的
+   * 「多少次触发一次」由槽顶的整数读数回答（已蓄 / 一层所需），分子走
+   * 模拟器的整数计数（`qinxinHits`），不拿浮点比例反乘回来。
+   */
+  private drawQinxinSlots(m: RenderModel, W: number, H: number, judgeY: number): void {
+    const { ctx } = this
+    const frac = Math.max(0, Math.min(1, m.qinxinGauge))
+    const hits = Math.max(0, Math.min(QINXIN.CHARGE_COMBOS, Math.round(m.qinxinHits)))
+    const top = Math.round(H * HUD_SIDE_TOP_FRAC)
+    const bottom = Math.round(judgeY - HUD_SIDE_BOTTOM_GAP)
+    const slotH = Math.max(HUD_SIDE_WIDTH * 2, bottom - top)
+    const slotY = bottom - slotH
+    const w = HUD_SIDE_WIDTH
+
+    for (const side of ['left', 'right'] as const) {
+      const x = side === 'left' ? HUD_SIDE_INSET : W - HUD_SIDE_INSET - w
+
+      // 空槽：即使一炮没蓄，也看得出「这里有进度」
+      ctx.fillStyle = 'rgba(63,107,99,0.14)'
+      this.roundRect(x, slotY, w, slotH, w / 2)
+      ctx.fill()
+
+      // 十分格刻线（未充能部分用墨色，充上之后改纸色重描一遍，见下）：
+      // 不看数字也读得出「还剩几格」
+      const tickY = (i: number): number => bottom - (slotH * i) / 10
+      ctx.strokeStyle = 'rgba(55,50,42,0.22)'
+      ctx.lineWidth = 1
+      for (let i = 1; i < 10; i += 1) {
+        const ty = tickY(i)
+        ctx.beginPath()
+        ctx.moveTo(x + 3, ty)
+        ctx.lineTo(x + w - 3, ty)
+        ctx.stroke()
+      }
+
+      if (frac > 0) {
+        const fillH = Math.max(w, slotH * frac)
+        const fillTop = bottom - fillH
+        ctx.fillStyle = QINXIN_COLOR
+        this.roundRect(x, fillTop, w, fillH, w / 2)
+        ctx.fill()
+        // 液面内的刻线换成纸色：隔着青碧仍能数出「还剩几格」
+        ctx.strokeStyle = 'rgba(250,247,239,0.5)'
+        for (let i = 1; i < 10; i += 1) {
+          const ty = tickY(i)
+          if (ty < fillTop + 2) continue
+          ctx.beginPath()
+          ctx.moveTo(x + 3, ty)
+          ctx.lineTo(x + w - 3, ty)
+          ctx.stroke()
+        }
+        // 充到哪一格的刀口：纸色高光压在液面上沿
+        ctx.fillStyle = 'rgba(250,247,239,0.62)'
+        ctx.fillRect(x + 4, fillTop + 1, w - 8, 2)
+      }
+
+      // 快满时的一记呼吸：槽要满了，肉眼能提前看到（满格即放）
+      if (frac > 0.82) {
+        ctx.globalAlpha = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(m.t * 9))
+        ctx.fillStyle = QINXIN_COLOR
+        this.roundRect(x, slotY, w, slotH, w / 2)
+        ctx.fill()
+        ctx.globalAlpha = 1
+      }
+
+      // 读数：槽顶正上方，靠屏侧对齐（不压进键位区与下落区）
+      ctx.font = `600 ${HUD_SMALL}px ${SERIF}`
+      ctx.textBaseline = 'alphabetic'
+      ctx.textAlign = side === 'left' ? 'left' : 'right'
+      ctx.fillStyle = frac > 0.82 ? 'rgba(63,107,99,1)' : 'rgba(63,107,99,0.9)'
+      ctx.fillText(`琴心 ${hits}/${QINXIN.CHARGE_COMBOS}`, side === 'left' ? x : x + w, slotY - 10)
     }
   }
 

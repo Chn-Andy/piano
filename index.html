@@ -11,6 +11,9 @@
         height: 100%;
         background: #efe9dc;
         overflow: hidden;
+        /* 触控板/滚轮的边界回弹也不许把画面带着走（工单 16：菜单里按方向键
+           曾经让整屏跟着移动；按键侧的默认行为在 main.ts 里吞掉） */
+        overscroll-behavior: none;
       }
       #stage {
         display: block;
@@ -189,8 +192,16 @@
       .rating-B { color: #57544c; }
       .rating-C { color: #a03d2c; }
       /* ── 键位图示（钢琴预览）── */
+      /* 定宽框：最宽键区（12 个白键 × 46px ≈ 552px）留出常量空间，琴键居中。
+         换难度时图示只是换键数，不推着整个菜单左右移动（工单 16）。 */
+      .piano-frame {
+        display: flex;
+        justify-content: center;
+        width: min(560px, 88vw);
+      }
       .piano-preview {
         position: relative;
+        flex: 0 0 auto;
         height: 74px;
         margin-top: 8px;
       }

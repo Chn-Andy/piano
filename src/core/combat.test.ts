@@ -1213,6 +1213,19 @@ describe('琴心蓄能与琴心通明（工单 10）', () => {
     expect(sim.qinxinGauge).toBeCloseTo(before, 9)
   })
 
+  it('整数读数：qinxinHits 蓄到几击读几击，放炮后归零（HUD「17/30」的来源）', () => {
+    const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS), { monsters: [singleMonster(10_000)] })
+    hitFirst(sim, 20)
+    expect(sim.qinxinHits).toBe(20)
+    expect(sim.qinxinGauge).toBeCloseTo(20 / QINXIN.CHARGE_COMBOS, 9)
+
+    // 补齐剩下的 10 击（第 21..30 颗在 4.0s..4.9s）：满槽即放，读数归零
+    hitFirst(sim, 10, 0.1, 4)
+    expect(sim.qinxinReleases).toBe(1)
+    expect(sim.qinxinHits).toBe(0)
+    expect(sim.qinxinGauge).toBe(0)
+  })
+
   it('溢出不浪费：连击不断时长连击能连放两炮', () => {
     const sim = new Simulator(burstChart(QINXIN.CHARGE_COMBOS * 2), { monsters: [singleMonster(10_000)] })
     hitFirst(sim, QINXIN.CHARGE_COMBOS * 2)

@@ -237,12 +237,17 @@ function showFatal(message: string): void {
   )
 }
 
-/** 键位图示：按谱面键区生成钢琴预览（白键整行、黑键嵌行，同真钢琴） */
+/**
+ * 键位图示：按谱面键区生成钢琴预览（白键整行、黑键嵌行，同真钢琴）。
+ * 外层 `.piano-frame` 是定宽框（最宽键区那一排白键的宽度），琴键在框内居中：
+ * 换曲目/难度时只有键数变化，图示不会推着整个菜单左右跳（工单 16——玩家把
+ * 这种重排读成「按方向键画面跟着动」）。
+ */
 function pianoPreviewHtml(keys: readonly KeyBinding[], lit?: ReadonlySet<string>): string {
   const WHITE_W = 46
   const BLACK_W = 30
   const whites = keys.filter((k) => !k.isBlack).length
-  let html = `<div class="piano-preview" style="width:${whites * WHITE_W}px">`
+  let html = `<div class="piano-frame"><div class="piano-preview" style="width:${whites * WHITE_W}px">`
   let whiteIndex = 0
   for (const binding of keys) {
     const isLit = lit !== undefined && lit.has(binding.key)
@@ -253,7 +258,7 @@ function pianoPreviewHtml(keys: readonly KeyBinding[], lit?: ReadonlySet<string>
       whiteIndex += 1
     }
   }
-  return `${html}</div>`
+  return `${html}</div></div>`
 }
 
 function bestHtml(songId: string, diff: DifficultyName): string {
@@ -433,7 +438,7 @@ function tutorialKeyPressed(rawKey: string): void {
   if (tutorialLit.has(physical)) return
   tutorialLit.add(physical)
   debugView.tutorialLit = tutorialLit.size
-  const preview = overlay.querySelector('.piano-preview')
+  const preview = overlay.querySelector('.piano-frame')
   if (preview !== null) {
     preview.outerHTML = pianoPreviewHtml(layoutForKeys([...WHITE_KEY_NOTES]).keys, tutorialLit)
   }
@@ -687,8 +692,37 @@ function press(lane: Lane, chartTime: number): void {
 
 /* ── 输入分发（按画面） ────────────────────────────────────────────── */
 
+/**
+ * 浏览器的默认按键行为（方向键滚动、空格翻页）会作用在游戏画布所在的文档上：
+ * 菜单里按 ↑↓←→ 选曲选难度时，整个画面跟着位移（工单 16 的来由）。这些键
+ * 游戏自己消费，就必须吃掉默认行为；唯一例外是焦点落在原生表单控件上——
+ * 设置里的滑条要靠方向键做原生微调，抢过来反而不能用。
+ */
+const SCROLL_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  ' ',
+  'Spacebar',
+])
+
+/** 焦点在原生表单控件上时，方向键/空格归控件 */
+function isFormField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
 function onKeyDown(ev: KeyboardEvent): void {
   if (ev.repeat) return // keydown 去重第一道；第二道在模拟器 held 状态
+  if (SCROLL_KEYS.has(ev.key) && !isFormField(ev.target)) ev.preventDefault()
   switch (screen) {
     case 'title': {
       void proceedFromTitle()
@@ -810,6 +844,7 @@ function drawBackdrop(): void {
     whiffs: [],
     tints: [],
     qinxinGauge: 0,
+    qinxinHits: 0,
     qinxins: [],
     sustains: [],
   }, true)
@@ -877,6 +912,7 @@ function frame(): void {
     whiffs,
     tints,
     qinxinGauge: sim.qinxinGauge,
+    qinxinHits: sim.qinxinHits,
     qinxins,
     sustains,
   })
