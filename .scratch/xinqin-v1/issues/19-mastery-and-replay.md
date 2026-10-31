@@ -134,3 +134,11 @@
 - 结算页两档仍无裁字（800×600 内容 359px，最小 top 128 / 最大 bottom 472）。
 
 `npm test` 349/349 绿（本轮新增 23 项），`npm run build` 绿；对局数值与谱面零改动。
+
+## Comments
+
+**2026-11-01 · v1.4 发布记录**：随 `a5f650d`（Merge feat/v1.4-performance）发布——GitHub Pages run
+[41243848460](https://github.com/Chn-Andy/piano/actions/runs/41243848460) 绿；线上产物逐字节同哈希
+（`index.html` `14ea8652…90fd`、`assets/index-DbhgX-mH.js` `6cc63f0c…3cd87`），与本地 `dist/` 一致。
+线上实测：曲库九格显示时长 2:55 / 2:13 / 3:38；开战后顶部 `0:11 / 2:55` 进度轨、左右「琴心 0/30」、
+底部「气血 100/100」同时就位；不按键的静置对局里伴奏持续发声（14 秒内 13 次采样触发）。

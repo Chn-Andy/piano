@@ -136,3 +136,11 @@ MIDI 的惯例是右手（`up:` / `Solo`）在前、左手或第二旋律声部�
 - 旋律音高推导三份：`core/accompaniment.ts` 的 `soundingMelody`、转换器的旋律取音、渲染侧的
   键位音高，都各自把「键名 → MIDI」走了一遍（换算本身已统一在 `core/pitch.ts`，重复的是取音路径）。
 - 这两处都是「形状重复」而非「语义重复」，等有第二首需要不同织体的曲子时再抽，避免过早抽象。
+
+## Comments
+
+**2026-11-01 · v1.4 发布记录**：随 `a5f650d`（Merge feat/v1.4-performance）发布——GitHub Pages run
+[41243848460](https://github.com/Chn-Andy/piano/actions/runs/41243848460) 绿；线上产物逐字节同哈希
+（`index.html` `14ea8652…90fd`、`assets/index-DbhgX-mH.js` `6cc63f0c…3cd87`），与本地 `dist/` 一致。
+线上实测：曲库九格显示时长 2:55 / 2:13 / 3:38；开战后顶部 `0:11 / 2:55` 进度轨、左右「琴心 0/30」、
+底部「气血 100/100」同时就位；不按键的静置对局里伴奏持续发声（14 秒内 13 次采样触发）。
