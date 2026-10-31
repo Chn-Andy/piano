@@ -40,3 +40,13 @@
 ### 4. 留给后续
 
 - 真机（用户本人的窗口尺寸与浏览器）还需要再看一眼：本轮的验证都在无头 Chrome 的三种视口下完成，没有覆盖 Safari/Firefox 与 itch 的 iframe 嵌入。
+
+### 5. 发布记录（2026-10-31）
+
+- 推送 `main` → `431807f`（Gitea `origin` 与 GitHub `github` 同步），GitHub Pages workflow run
+  [41205151589](https://github.com/Chn-Andy/piano/actions/runs/41205151589) 绿。
+- 产物回读逐字节同哈希：线上 `index.html` = `3cf361c4…970f7`、`assets/index-CkJyWn-j.js` = `3976dd1b…d12d`，
+  与本地 `dist/` 一致；线上脚本里能搜到新 HUD 的读数模板（`琴心 ${r}/${fe.CHARGE_COMBOS}`）。
+- 线上实测（`https://chn-andy.github.io/piano/`，headless Chrome）：曲库 ↑↓←→ 与空格 `defaultPrevented` 全真、
+  `scrollTop` 恒 0；开战后左右竖槽「琴心 0/30」、底部「气血 100 / 100」就位，顶边无任何条。
+
