@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MASTERY_LABELS, masteryFor, masteryFromRecord } from './mastery'
+import { bestRecordFor, recordResult } from './records'
+import type { Records } from './records'
 
 /**
  * 掌握度（GLOSSARY：掌握度 / spec v1.4「掌握度是纯判定」）：
@@ -109,5 +111,24 @@ describe('掌握度：精熟可达且不回退（A1）', () => {
   it('纪录里的精度与失误数描述同一局：零失误 99% 可判精熟，有失误再准也只到弹熟', () => {
     expect(masteryFromRecord({ rating: 'S', maxCombo: 82, accuracy: 0.99, missCount: 0 })).toBe('mastered')
     expect(masteryFromRecord({ rating: 'S', maxCombo: 82, accuracy: 0.99, missCount: 3 })).toBe('seasoned')
+  })
+
+  it('端到端（A1 的验收场景）：先 A 零失误 97%，再打一局 S 但精度 50%、连击 40 → 徽记仍是精熟', () => {
+    let records: Records = {}
+    records = recordResult(records, 'canon', 'easy', 'victory', {
+      rating: 'A',
+      maxCombo: 90,
+      accuracy: 0.97,
+      missCount: 0,
+    }).records
+    expect(masteryFromRecord(bestRecordFor(records, 'canon', 'easy'))).toBe('mastered')
+
+    records = recordResult(records, 'canon', 'easy', 'victory', {
+      rating: 'S',
+      maxCombo: 40,
+      accuracy: 0.5,
+      missCount: 5,
+    }).records
+    expect(masteryFromRecord(bestRecordFor(records, 'canon', 'easy')), '精熟不回退').toBe('mastered')
   })
 })

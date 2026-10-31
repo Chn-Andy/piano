@@ -133,4 +133,4 @@
   800×520 时面板内部可滚（scrollHeight 564 > clientHeight 520），不再裁掉不可达的字。
 - 结算页两档仍无裁字（800×600 内容 359px，最小 top 128 / 最大 bottom 472）。
 
-`npm test` 348/348 绿（本轮新增 22 项），`npm run build` 绿；对局数值与谱面零改动。
+`npm test` 349/349 绿（本轮新增 23 项），`npm run build` 绿；对局数值与谱面零改动。
