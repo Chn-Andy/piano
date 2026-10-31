@@ -1,8 +1,12 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { accompanimentPlan } from '../core/accompaniment'
 import type { Chart } from '../core/chart'
+import { SONGS } from '../charts'
 import { WHITE_KEY_NOTES, layoutForKeys } from '../core/keymap'
+import { noteNameToMidi } from '../core/pitch'
 import type { SourceSong } from './midiSource'
 import { parseMidi } from './midiSource'
 import { TINT_PLAN } from '../core/config'
@@ -547,5 +551,212 @@ describe('异色音符编排（Seam 2：确定性、频率 5–8%、最小间隔
       }
     }
     expect([...kinds].sort()).toEqual(['blast', 'cold', 'toxic'])
+  })
+})
+
+/* ── 伴奏声部（工单 18，ADR-0016：曲子始终在，旋律永远是你的）──────────── */
+
+/** 双轨合成源曲：0 号轨=右手旋律（C5 长音），1 号轨=左手（G2 低音） */
+function twoHands(): SourceSong {
+  const melody = Array.from({ length: 9 }, (_, i): [number, number] => [i, 72])
+  // 左手铺满每个和声窗口（0..10 秒），保证这条断言只看得到材料派生的伴奏
+  const left = [0, 2, 4, 6, 8, 10].map((t): [number, number] => [t, 43])
+  return {
+    bpm: 60,
+    key: null,
+    tracks: [
+      { index: 0, name: 'up:', channel: 0, percussion: false, noteCount: melody.length },
+      { index: 1, name: 'down:', channel: 1, percussion: false, noteCount: left.length },
+    ],
+    notes: [
+      ...melody.map(([time, midi]) => ({ time, midi, track: 0 })),
+      ...left.map(([time, midi]) => ({ time, midi, track: 1 })),
+    ].sort((a, b) => a.time - b.time || a.midi - b.midi),
+  }
+}
+
+/** 旋律最低键的 MIDI：伴奏一律在它之下 */
+function lowestKeyMidi(chart: Chart): number {
+  return noteNameToMidi(chart.meta!.keys[0]!)
+}
+
+/** 一条谱面的伴奏音高序列 */
+function accompanimentPitches(chart: Chart): number[] {
+  return chart.accompaniment!.map((n) => n.midi)
+}
+
+/**
+ * 材料窗口派生的伴奏（排除曲末两秒收尾余量——那里源曲已无材料，
+ * 只剩合成铺底，任何曲子都会有）。
+ */
+function materialPitches(chart: Chart): number[] {
+  const tail = chart.duration - 2
+  return chart.accompaniment!.filter((n) => n.time < tail).map((n) => n.midi)
+}
+
+describe('伴奏声部（工单 18）：从非主旋律材料生成，不代弹', () => {
+  it('伴奏取自第二轨（左手）：低音跟着左手的音高走，不跟旋律走', () => {
+    const chart = convertChart(twoHands(), 'easy', INFO)
+    const bass = materialPitches(chart)
+
+    // 六个和声窗口各一声低音；左手 G2(43) 原样留在伴奏音域（C2..B3）里
+    expect(bass).toHaveLength(6)
+    expect(bass).toEqual([43, 43, 43, 43, 43, 43])
+    expect(bass.every((midi) => midi % 12 === 7), '音级取自左手 G，不是旋律 C').toBe(true)
+  })
+
+  it('密度按难度分档：简单每窗 1 声、中等 3 声、高级 4 声（不随表现动态加厚）', () => {
+    // 和声窗口 = 2 拍；60bpm 下即 2 秒。取前六个窗口（都有材料）逐窗数声部
+    const perWindow = (difficulty: 'easy' | 'medium' | 'hard'): number[] => {
+      const counts = new Array<number>(6).fill(0)
+      for (const note of convertChart(twoHands(), difficulty, INFO).accompaniment!) {
+        const index = Math.floor(note.time / 2)
+        if (index < 6) counts[index] = counts[index]! + 1
+      }
+      return counts
+    }
+
+    expect(perWindow('easy')).toEqual([1, 1, 1, 1, 1, 1])
+    expect(perWindow('medium')).toEqual([3, 3, 3, 3, 3, 3])
+    expect(perWindow('hard')).toEqual([4, 4, 4, 4, 4, 4])
+  })
+
+  it('中等是分解三和弦：每窗的音级集合是「根音 + 三度 + 五度」', () => {
+    const chart = convertChart(twoHands(), 'medium', INFO)
+    const pcs = new Set(materialPitches(chart).map((midi) => midi % 12))
+
+    // 根音 G(7)，材料（无调号，按大调兜底）→ 大三度 B(11)、五度 D(2)
+    expect([...pcs].sort((a, b) => a - b)).toEqual([2, 7, 11])
+  })
+
+  it('三度性质取自调性：a 小调的曲子配小三度，不会把 C 弹成 C#', () => {
+    const aMinor: SourceSong = {
+      bpm: 60,
+      key: { root: 'A', scale: 'minor' },
+      tracks: [
+        { index: 0, name: 'up:', channel: 0, percussion: false, noteCount: 2 },
+        { index: 1, name: 'down:', channel: 1, percussion: false, noteCount: 2 },
+      ],
+      notes: [
+        { time: 0, midi: 76, track: 0 },
+        { time: 2, midi: 76, track: 0 },
+        { time: 0, midi: 45, track: 1 },
+        { time: 2, midi: 45, track: 1 },
+      ],
+    }
+    const chart = convertChart(aMinor, 'medium', INFO)
+    const firstWindow = new Set(
+      chart.accompaniment!.filter((n) => n.time < 2).map((n) => n.midi % 12),
+    )
+
+    // 根音 A(9)：小三度 C(0) + 五度 E(4)；大三度 C#(1) 全曲不出现
+    expect([...firstWindow].sort((a, b) => a - b)).toEqual([0, 4, 9])
+    expect(
+      accompanimentPitches(chart).some((midi) => midi % 12 === 1),
+      'a 小调的伴奏里不该出现 C#',
+    ).toBe(false)
+  })
+
+  it('不代弹：同一时刻同一音高不得同时出现在旋律与伴奏里（结构测试）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        const chart = charts[difficulty]
+        const melody = new Set(
+          chart.notes.map((n) => `${n.time}|${noteNameToMidi(chart.meta!.keys[n.lane]!)}`),
+        )
+        const clash = (chart.accompaniment ?? []).filter((n) => melody.has(`${n.time}|${n.midi}`))
+        expect(clash, `${song.title} ${difficulty}：伴奏替玩家弹了 ${clash.length} 颗旋律音`).toEqual([])
+      }
+    }
+  })
+
+  it('伴奏整首不断：任意 4 秒窗口里至少有一声（三首曲子，卡农走合成铺底）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        const chart = charts[difficulty]
+        const fallback = SONGS.find((s) => s.id === song.id)?.accompanimentFallback ?? 'none'
+        const hits = accompanimentPlan(chart, fallback)
+        const last = Math.max(...hits.map((hit) => hit.at))
+        for (let t = 0; t + 4 <= chart.duration; t += 0.5) {
+          const heard = hits.some((hit) => hit.at >= t && hit.at <= t + 4)
+          expect(heard, `${song.title} ${difficulty}：${t.toFixed(1)}s 起的 4 秒里没有伴奏`).toBe(true)
+        }
+        expect(last, `${song.title} ${difficulty}：伴奏应跟到曲末`).toBeGreaterThan(chart.duration - 4)
+      }
+    }
+  })
+
+  it('伴奏一律低于旋律最低键：永不低于玩家的键位音域（不代弹的音域保证）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        const chart = charts[difficulty]
+        const floor = lowestKeyMidi(chart)
+        for (const note of chart.accompaniment ?? []) {
+          expect(note.midi, `${song.title} ${difficulty}：伴奏 ${note.midi} 侵入了键位音域`).toBeLessThan(floor)
+          expect(
+            note.midi,
+            `${song.title} ${difficulty}：伴奏 ${note.midi} 掉出左手音域（旋律之下两个八度）`,
+          ).toBeGreaterThanOrEqual(floor - 24)
+        }
+      }
+    }
+  })
+
+  it('伴奏密度随难度单调：简单 ≤ 中等 ≤ 高级（每分钟伴奏音数）', () => {
+    for (const song of SONG_FIXTURES) {
+      const charts = fixtureCharts(song)
+      const fallback = SONGS.find((s) => s.id === song.id)?.accompanimentFallback ?? 'none'
+      const perMinute = (chart: Chart): number =>
+        accompanimentPlan(chart, fallback).length / (chart.duration / 60)
+
+      expect(perMinute(charts.easy), `${song.title}：简单应最稀`).toBeLessThanOrEqual(
+        perMinute(charts.medium),
+      )
+      expect(perMinute(charts.medium), `${song.title}：中等应不比高级密`).toBeLessThanOrEqual(
+        perMinute(charts.hard),
+      )
+    }
+  })
+
+  it('卡农没有可拆声部 → 谱面不带伴奏字段；致爱丽丝/春江各带一层', () => {
+    const canon = convertSong(parseMidi(readFileSync(join(FIXTURES, 'canon-in-d.mid'))), {
+      id: 'canon-in-d',
+      title: '卡农',
+    })
+    for (const difficulty of DIFFICULTIES) {
+      expect('accompaniment' in canon[difficulty], '卡农谱面不得因伴奏而变').toBe(false)
+    }
+
+    for (const song of SONG_FIXTURES.filter((s) => s.id !== 'canon-in-d')) {
+      const charts = fixtureCharts(song)
+      for (const difficulty of DIFFICULTIES) {
+        expect(charts[difficulty].accompaniment?.length ?? 0).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('确定性：同一 fixture 两次生成的伴奏逐字节一致（可哈希比对）', () => {
+    for (const song of SONG_FIXTURES) {
+      const digest = (): string =>
+        JSON.stringify(fixtureCharts(song).hard.accompaniment ?? null)
+      expect(digest(), `${song.title}：两次生成的伴奏应逐字节一致`).toBe(digest())
+    }
+  })
+
+  it('卡农谱面逐字节不动：三份 JSON 的 sha256 与 v1.3 一致（不重定标）', () => {
+    const CANON_SHA256 = {
+      easy: 'f89c1f3f0af57a74fb6bb53d0336ddcfc26fd5c9c02a38ce35d8b0dd7b9fb8c7',
+      medium: '6db5ef0743d9713d553b71c43493ab6e227c36ba82adf4f068956495e3429bed',
+      hard: '27b66378cbabb0cdf8a1b68238d225912c674e76565589c205b565460279a1c1',
+    }
+    for (const difficulty of DIFFICULTIES) {
+      const bytes = readFileSync(join(CHARTS_ROOT, 'canon', `${difficulty}.json`))
+      expect(createHash('sha256').update(bytes).digest('hex'), `canon/${difficulty}.json 被改动`).toBe(
+        CANON_SHA256[difficulty],
+      )
+    }
   })
 })

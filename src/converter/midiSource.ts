@@ -8,11 +8,28 @@
 import ToneMidi from '@tonejs/midi'
 import { pitchClassOf } from '../core/pitch'
 
-/** 源曲音符：时刻（秒）+ MIDI 音高 */
+/** 源曲音符：时刻（秒）+ MIDI 音高 + 所属轨号（工单 18：分轨判定伴奏材料） */
 export interface SourceNote {
   readonly time: number
   readonly midi: number
+  /** 所属轨下标（与 SourceTrack.index 对应；合成源曲省略即视作单轨） */
+  readonly track?: number
 }
+
+/** 源曲的一轨（乐曲声部）：轨道顺序即 MIDI 文件的书写顺序 */
+export interface SourceTrack {
+  readonly index: number
+  /** 轨名（如 'up:' / 'down:' / 'Solo'；无名轨为空串） */
+  readonly name: string
+  /** MIDI 通道（0 起；9 = 打击乐通道） */
+  readonly channel: number
+  /** 打击轨（通道 9）：只有节奏没有和声材料，绝不进伴奏声部 */
+  readonly percussion: boolean
+  readonly noteCount: number
+}
+
+/** 打击乐通道（GM 约定，0 起） */
+const PERCUSSION_CHANNEL = 9
 
 /** 源曲调号 */
 export interface SourceKey {
@@ -27,6 +44,12 @@ export interface SourceSong {
   /** 首个速度标记的 BPM（v1 假设全曲恒速，卡农等古典 fixture 均满足） */
   readonly bpm: number
   readonly key: SourceKey | null
+  /**
+   * 分轨清单（工单 18 扩展；省略 = 单轨合成源曲）。轨道顺序决定
+   * 「主语律 / 伴奏材料」的判定：第一条有音的旋律轨是主旋律，第二条是
+   * 左手或第二旋律声部——伴奏只从后者取材料（ADR-0016）。
+   */
+  readonly tracks?: readonly SourceTrack[]
 }
 
 /** 音高级 → 升号拼写的音名（小调根音换算用） */
@@ -47,8 +70,17 @@ function tonicRoot(reported: string, scale: 'major' | 'minor'): string {
 /** 解析 MIDI 二进制为源曲（@tonejs/midi：60 = C4，time 单位秒）。 */
 export function parseMidi(data: ArrayBuffer | Uint8Array): SourceSong {
   const midi = new ToneMidi.Midi(data)
+  const tracks: SourceTrack[] = midi.tracks.map((track, index) => ({
+    index,
+    name: track.name,
+    channel: track.channel,
+    percussion: track.channel === PERCUSSION_CHANNEL,
+    noteCount: track.notes.length,
+  }))
   const notes: SourceNote[] = midi.tracks
-    .flatMap((track) => track.notes.map((note) => ({ time: note.time, midi: note.midi })))
+    .flatMap((track, index) =>
+      track.notes.map((note) => ({ time: note.time, midi: note.midi, track: index })),
+    )
     .sort((a, b) => a.time - b.time)
   const bpm = midi.header.tempos[0]?.bpm ?? 120
   const keySignature = midi.header.keySignatures[0]
@@ -56,6 +88,7 @@ export function parseMidi(data: ArrayBuffer | Uint8Array): SourceSong {
   return {
     notes,
     bpm,
+    tracks,
     key:
       keySignature === undefined
         ? null

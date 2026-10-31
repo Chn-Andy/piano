@@ -20,17 +20,14 @@ import {
   PHRASE_REST_BEATS,
   SUSTAIN_SECONDS,
   noteNameToMidi,
+  roundMs,
 } from './rules'
+import { buildAccompaniment } from './accompaniment'
 
 /** 曲目身份（写入谱面元数据） */
 export interface SongInfo {
   readonly id: string
   readonly title: string
-}
-
-/** 秒→毫秒圆整：谱面时刻统一毫秒精度，保证产物 JSON 确定性 */
-function roundMs(t: number): number {
-  return Math.round(t * 1000) / 1000
 }
 
 /** 浮点安全裕度：网格/间距的等值比较 */
@@ -181,16 +178,32 @@ export function convertChart(
     const tint = tints[index]
     for (const note of event) pairs.push([note.time, note.lane, chordId, tint])
   })
-  return createChart(pairs, {
-    meta: {
-      song: info.id,
-      title: info.title,
-      difficulty,
-      keys: rule.keys,
-      quantizeGrid: roundMs(grid),
-    },
-    phrases,
+  const meta = {
+    song: info.id,
+    title: info.title,
+    difficulty,
+    keys: rule.keys,
+    quantizeGrid: roundMs(grid),
+  } as const
+  const melody = createChart(pairs, { meta, phrases })
+
+  // 伴奏声部（工单 18）：从源曲的非主旋律轨派生；没有可拆材料的曲子
+  // （卡农）返回 undefined——谱面因此保持原样，铺底改由壳层合成。
+  const accompaniment = buildAccompaniment({
+    source,
+    difficulty,
+    beat,
+    grid,
+    shift: Math.max(0, shift),
+    duration: melody.duration,
+    registerTop: noteNameToMidi(rule.keys[0]!),
+    melody: melody.notes.map((note) => ({
+      time: note.time,
+      midi: noteNameToMidi(rule.keys[note.lane]!),
+    })),
   })
+  if (accompaniment === undefined) return melody
+  return createChart(pairs, { meta, phrases, accompaniment })
 }
 
 /* ── 异色词缀编排（工单 09，GLOSSARY：异色音符）────────────────────────

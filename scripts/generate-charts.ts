@@ -57,7 +57,8 @@ for (const song of SONGS) {
     console.log(
       `${song.title} ${difficulty}: ` +
         `${chart.notes.length} 音符 · ${(chart.notes.length / chart.duration).toFixed(2)} 音符/秒 · ` +
-        `${chart.meta!.keys.length} 键位 · ${chart.phrases!.length} 乐句 · ${chordCount} 和弦 → ${path}`,
+        `${chart.meta!.keys.length} 键位 · ${chart.phrases!.length} 乐句 · ${chordCount} 和弦 · ` +
+        `伴奏 ${chart.accompaniment?.length ?? 0} 音 → ${path}`,
     )
   }
 }

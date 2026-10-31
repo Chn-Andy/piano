@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createChart } from './chart'
+import { chartFromJson, createChart } from './chart'
 import type { ChartMeta, Phrase } from './chart'
 
 /**
@@ -194,5 +194,66 @@ describe('异色词缀（工单 09，GLOSSARY：异色音符）', () => {
       [1, 1, 0, 'cold'],
     ])
     expect(ok.notes.every((n) => n.tint === 'cold')).toBe(true)
+  })
+})
+
+describe('伴奏声部（工单 18，GLOSSARY：伴奏声部 / ADR-0016）', () => {
+  it('伴奏声部随谱面装载：时刻与音高原样保留；缺字段即无伴奏（旧谱面照常读入）', () => {
+    const chart = createChart([[1, 0], [2, 1]], {
+      meta: META,
+      accompaniment: [
+        { time: 0.5, midi: 48 },
+        { time: 1.5, midi: 43 },
+      ],
+    })
+
+    expect(chart.accompaniment).toEqual([
+      { time: 0.5, midi: 48 },
+      { time: 1.5, midi: 43 },
+    ])
+
+    // 旧谱面：JSON 里没有伴奏声部字段——读入不报错，伴奏缺省（静默跳过）
+    const legacy = chartFromJson({ notes: [{ time: 1, lane: 0 }] })
+    expect(legacy.notes).toHaveLength(1)
+    expect(legacy.accompaniment).toBeUndefined()
+  })
+
+  it('不代弹：伴奏不得与旋律在同一时刻发出同一音高（ADR-0016 的边界）', () => {
+    // META 的 0 号键是 C4（60）：同刻同音高 = 伴奏替玩家弹了旋律音
+    expect(() =>
+      createChart([[1, 0], [2, 1]], { meta: META, accompaniment: [{ time: 1, midi: 60 }] }),
+    ).toThrow(/伴奏/)
+
+    // 同音高换到别的时刻、或同刻换个音高：都不构成代弹
+    expect(() =>
+      createChart([[1, 0], [2, 1]], {
+        meta: META,
+        accompaniment: [
+          { time: 1, midi: 59 },
+          { time: 2, midi: 60 },
+        ],
+      }),
+    ).not.toThrow()
+  })
+
+  it('伴奏时刻须落在曲内、音高是合法 MIDI 值、时刻升序（契约可序列化）', () => {
+    expect(() =>
+      createChart([[1, 0]], { meta: META, accompaniment: [{ time: -1, midi: 40 }] }),
+    ).toThrow(/伴奏/)
+    expect(() =>
+      createChart([[1, 0]], { meta: META, accompaniment: [{ time: 5, midi: 40 }] }),
+    ).toThrow(/伴奏/)
+    expect(() =>
+      createChart([[1, 0]], { meta: META, accompaniment: [{ time: 1, midi: 40.5 }] }),
+    ).toThrow(/伴奏/)
+    expect(() =>
+      createChart([[1, 0]], {
+        meta: META,
+        accompaniment: [
+          { time: 2, midi: 40 },
+          { time: 1, midi: 41 },
+        ],
+      }),
+    ).toThrow(/伴奏/)
   })
 })
