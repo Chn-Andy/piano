@@ -29,19 +29,34 @@ function memoryStore(initial?: Record<string, string>): KeyValueStore & {
   }
 }
 
+/** 一次入册的读数（精度/失误数是票 19 起的新字段） */
+function stats(
+  rating: 'S' | 'A' | 'B' | 'C',
+  maxCombo: number,
+  accuracy = 0.9,
+  missCount = 0,
+): { rating: 'S' | 'A' | 'B' | 'C'; maxCombo: number; accuracy: number; missCount: number } {
+  return { rating, maxCombo, accuracy, missCount }
+}
+
 describe('本机最佳纪录存取', () => {
   it('空存储读出空纪录；胜局首成绩写入并报告提升', () => {
     const store = memoryStore()
     expect(loadRecords(store)).toEqual({})
 
-    const { records, improved } = recordResult({}, 'fur-elise', 'easy', 'victory', 'A', 87)
+    const { records, improved } = recordResult({}, 'fur-elise', 'easy', 'victory', stats('A', 87))
     expect(improved).toBe(true)
-    expect(bestRecordFor(records, 'fur-elise', 'easy')).toEqual({ rating: 'A', maxCombo: 87 })
+    expect(bestRecordFor(records, 'fur-elise', 'easy')).toEqual({
+      rating: 'A',
+      maxCombo: 87,
+      accuracy: 0.9,
+      missCount: 0,
+    })
   })
 
   it('失败不更新最佳：即使评级连击都更好，纪录保持原样', () => {
     const before: Records = { canon: { medium: { rating: 'B', maxCombo: 40 } } }
-    const { records, improved } = recordResult(before, 'canon', 'medium', 'defeat', 'S', 300)
+    const { records, improved } = recordResult(before, 'canon', 'medium', 'defeat', stats('S', 300))
     expect(improved).toBe(false)
     expect(records).toEqual(before)
     expect(bestRecordFor(records, 'canon', 'medium')).toEqual({ rating: 'B', maxCombo: 40 })
@@ -50,11 +65,16 @@ describe('本机最佳纪录存取', () => {
   it('评级优先：更高评级更新（即使连击更低），更低评级不更新（即使连击更高）', () => {
     const base: Records = { canon: { hard: { rating: 'A', maxCombo: 150 } } }
 
-    const up = recordResult(base, 'canon', 'hard', 'victory', 'S', 90)
+    const up = recordResult(base, 'canon', 'hard', 'victory', stats('S', 90))
     expect(up.improved).toBe(true)
-    expect(bestRecordFor(up.records, 'canon', 'hard')).toEqual({ rating: 'S', maxCombo: 90 })
+    expect(bestRecordFor(up.records, 'canon', 'hard')).toEqual({
+      rating: 'S',
+      maxCombo: 90,
+      accuracy: 0.9,
+      missCount: 0,
+    })
 
-    const down = recordResult(base, 'canon', 'hard', 'victory', 'B', 999)
+    const down = recordResult(base, 'canon', 'hard', 'victory', stats('B', 999))
     expect(down.improved).toBe(false)
     expect(bestRecordFor(down.records, 'canon', 'hard')).toEqual({ rating: 'A', maxCombo: 150 })
   })
@@ -62,28 +82,58 @@ describe('本机最佳纪录存取', () => {
   it('同级比连击：更高更新，更低或持平不更新', () => {
     const base: Records = { 'chun-jiang-hua-yue-ye': { easy: { rating: 'A', maxCombo: 60 } } } as Records
 
-    const up = recordResult(base, 'chun-jiang-hua-yue-ye', 'easy', 'victory', 'A', 61)
+    const up = recordResult(base, 'chun-jiang-hua-yue-ye', 'easy', 'victory', stats('A', 61))
     expect(up.improved).toBe(true)
     expect(bestRecordFor(up.records, 'chun-jiang-hua-yue-ye', 'easy')!.maxCombo).toBe(61)
 
-    const flat = recordResult(base, 'chun-jiang-hua-yue-ye', 'easy', 'victory', 'A', 60)
+    const flat = recordResult(base, 'chun-jiang-hua-yue-ye', 'easy', 'victory', stats('A', 60))
     expect(flat.improved).toBe(false)
   })
 
   it('各歌各难度独立：互不覆盖', () => {
     let records: Records = { canon: { easy: { rating: 'S', maxCombo: 82 } } }
-    records = recordResult(records, 'canon', 'hard', 'victory', 'B', 10).records
-    records = recordResult(records, 'fur-elise', 'easy', 'victory', 'C', 1).records
+    records = recordResult(records, 'canon', 'hard', 'victory', stats('B', 10)).records
+    records = recordResult(records, 'fur-elise', 'easy', 'victory', stats('C', 1)).records
 
     expect(bestRecordFor(records, 'canon', 'easy')).toEqual({ rating: 'S', maxCombo: 82 })
-    expect(bestRecordFor(records, 'canon', 'hard')).toEqual({ rating: 'B', maxCombo: 10 })
-    expect(bestRecordFor(records, 'fur-elise', 'easy')).toEqual({ rating: 'C', maxCombo: 1 })
+    expect(bestRecordFor(records, 'canon', 'hard')).toEqual({
+      rating: 'B',
+      maxCombo: 10,
+      accuracy: 0.9,
+      missCount: 0,
+    })
+    expect(bestRecordFor(records, 'fur-elise', 'easy')).toEqual({
+      rating: 'C',
+      maxCombo: 1,
+      accuracy: 0.9,
+      missCount: 0,
+    })
     expect(bestRecordFor(records, 'fur-elise', 'hard')).toBeUndefined()
+  })
+
+  it('新成绩连同精度与失误数一起入册：掌握度的判档依据要留在纪录里', () => {
+    const { records } = recordResult({}, 'canon', 'easy', 'victory', stats('A', 87, 0.873, 4))
+    expect(bestRecordFor(records, 'canon', 'easy')).toEqual({
+      rating: 'A',
+      maxCombo: 87,
+      accuracy: 0.873,
+      missCount: 4,
+    })
+  })
+
+  it('旧版纪录（只有评级与连击）读入不报错：缺的字段不编造，原样保留', () => {
+    const store = memoryStore({
+      [RECORDS_KEY]: JSON.stringify({ canon: { easy: { rating: 'S', maxCombo: 82 } } }),
+    })
+    const records = loadRecords(store)
+    expect(bestRecordFor(records, 'canon', 'easy')).toEqual({ rating: 'S', maxCombo: 82 })
+    expect(bestRecordFor(records, 'canon', 'easy')?.accuracy).toBeUndefined()
+    expect(bestRecordFor(records, 'canon', 'easy')?.missCount).toBeUndefined()
   })
 
   it('保存 → 读取 往返一致（键名版本化）', () => {
     const store = memoryStore()
-    const { records } = recordResult({}, 'canon', 'medium', 'victory', 'S', 115)
+    const { records } = recordResult({}, 'canon', 'medium', 'victory', stats('S', 115))
     saveRecords(store, records)
 
     expect(store.data.get(RECORDS_KEY)).toBeDefined()
@@ -111,7 +161,7 @@ describe('难度键完整性', () => {
     const difficulties: DifficultyName[] = ['easy', 'medium', 'hard']
     let records: Records = {}
     for (const [i, d] of difficulties.entries()) {
-      records = recordResult(records, 'canon', d, 'victory', 'B', i + 1).records
+      records = recordResult(records, 'canon', d, 'victory', stats('B', i + 1)).records
     }
     for (const [i, d] of difficulties.entries()) {
       expect(bestRecordFor(records, 'canon', d)!.maxCombo).toBe(i + 1)

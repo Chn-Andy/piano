@@ -2,8 +2,9 @@
  * 装配层（薄壳）：画面状态机——把纯核心模拟器与音频/渲染两个壳接在一起。
  * 画面流：标题（等用户手势）→〔首次进入〕30 秒白键试按引导 → 曲库（三首 ×
  * 三难度、本机最佳纪录、键位图示）→ 倒计时 → 演奏 ⇄ 暂停（Esc 菜单：继续 /
- * 放弃；标签页失焦自动暂停）→ 终局结算（评级 S/A/B/C、最大连击、伤害统计；
- * 胜局写本机纪录）→ 整首重开或返回曲库。全中文 UI（工单 05）。
+ * 放弃；标签页失焦自动暂停）→ 终局结算（演奏卡：曲名/难度/评级/精度/最长连击/
+ * 掌握度；「听我的演奏」回放最后 20 秒；胜局写本机纪录）→ 整首重开或返回曲库。
+ * 全中文 UI（工单 05）。
  *
  * 开发验证钩子（URL 查询参数，普通玩家不受影响；走与真人完全相同的按键管线）：
  *   ?auto=perfect —— 按谱面时刻精确自动弹奏（验胜利路径）
@@ -21,13 +22,17 @@ import { accompanimentPlan } from './core/accompaniment'
 import { comboMultiplierFor } from './core/combat'
 import { PLAYER_MAX_HP } from './core/config'
 import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
+import { masteryFor, masteryFromRecord, masteryLine, MASTERY_LABELS } from './core/mastery'
+import type { MasteryLevel } from './core/mastery'
+import { replayPlanFor } from './core/replay'
+import type { PlayedNote } from './core/replay'
 import { midiToNoteName } from './core/pitch'
 import type { KeyBinding, KeyLayout } from './core/keymap'
 import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/records'
 import type { KeyValueStore, Records } from './core/records'
 import { accuracyFor, offsetAdvice, ratingFor } from './core/rating'
 import type { Rating } from './core/rating'
-import { CUE_LIFE, formatClock, progressCueAt, progressLine, songProgress } from './core/progress'
+import { CUE_LIFE, finaleAtOf, formatClock, progressCueAt, progressLine, songProgress } from './core/progress'
 import type { OutcomeReason } from './core/progress'
 import { judgedTime, loadSettings, saveSettings } from './core/settings'
 import type { Settings } from './core/settings'
@@ -117,6 +122,11 @@ const debugView: {
   /** 进度读数与当前句提示（票 17 浏览器实测读数：轨画不出来也读得出数） */
   progressRatio: number
   progressCue: string | null
+  /** 本局掌握度与回放读数（票 19 浏览器实测读数：徽记与回放都读得出来） */
+  mastery: string | null
+  replayNotes: number
+  replayMisses: number
+  replayPlaying: boolean
 } = {
   phase: 'title',
   t: 0,
@@ -141,6 +151,10 @@ const debugView: {
   qinxinReleases: 0,
   progressRatio: 0,
   progressCue: null,
+  mastery: null,
+  replayNotes: 0,
+  replayMisses: 0,
+  replayPlaying: false,
 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
@@ -179,8 +193,13 @@ let outcomeShown = false
 let endedFreezeT: number | null = null
 /** 结算画面允许出现的最早音频时钟时刻（终章宽限） */
 let overlayDueAt = 0
-/** 结算预计算：评级与本局是否刷新纪录（胜负事件到达时写定） */
-let settlement: { rating: Rating; improved: boolean } | null = null
+/**
+ * 本局演奏记录（票 19）：判定流里每一颗音的抄本，只活在内存里。
+ * 结算页据此回放最后 20 秒；离开结算即散——不写存储、不留可回访入口。
+ */
+const playedNotes: PlayedNote[] = []
+/** 结算预计算：评级、本局掌握度与是否刷新纪录（胜负事件到达时写定） */
+let settlement: { rating: Rating; improved: boolean; mastery: MasteryLevel | null } | null = null
 /** 暂停前的画面（继续时回到倒计时或演奏） */
 let pausedFrom: 'countdown' | 'playing' = 'playing'
 
@@ -223,6 +242,10 @@ function resetDebugView(): void {
   debugView.sustainTier = null
   debugView.sustainFinale = false
   debugView.sustainAt = 0
+  debugView.mastery = null
+  debugView.replayNotes = 0
+  debugView.replayMisses = 0
+  debugView.replayPlaying = false
 }
 
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
@@ -273,10 +296,16 @@ function pianoPreviewHtml(keys: readonly KeyBinding[], lit?: ReadonlySet<string>
   return `${html}</div></div>`
 }
 
+function masteryChip(level: MasteryLevel | null): string {
+  const key = level ?? 'none'
+  return `<span class="mastery mastery-${key}">${MASTERY_LABELS[key]}</span>`
+}
+
 function bestHtml(songId: string, diff: DifficultyName): string {
   const best = bestRecordFor(records, songId, diff)
   if (best === undefined) return '<span class="diff-best">未挑战</span>'
-  return `<span class="diff-best"><span class="best-rating rating-${best.rating}">${best.rating}</span>连击 ${best.maxCombo}</span>`
+  // 徽记读本机纪录（旧纪录缺精度/失误数 → 降级为只能判到弹熟，见 mastery.ts）
+  return `<span class="diff-best"><span class="best-rating rating-${best.rating}">${best.rating}</span>连击 ${best.maxCombo}${masteryChip(masteryFromRecord(best))}</span>`
 }
 
 function showLibrary(): void {
@@ -488,23 +517,108 @@ function offsetAdviceLine(summary: BattleSummary): string {
   return advice === null ? '' : `<p class="hint">${advice}</p>`
 }
 
+/* ── 回放（票 19）：只在结算这一刻，只在内存里 ──────────────────────── */
+
+/** 回放专用的音乐支路：接在音乐轨上（同一「琴声音量」），离开结算即断开 */
+let replayBus: GainNode | null = null
+/** 回放起点前的余量：第一颗音也落在音频时间线的未来（防爆音） */
+const REPLAY_LEAD = 0.12
+
+/**
+ * 停掉回放：未到期的调度丢掉，已排进音频时间线的采样随支路断开一起失声。
+ * 离开结算画面（返回曲库 / 再来一次）时调用——回放只在结算这一刻有效。
+ */
+function stopReplay(): void {
+  engine.cancelScheduled()
+  if (replayBus !== null) {
+    replayBus.disconnect()
+    replayBus = null
+  }
+  debugView.replayPlaying = false
+}
+
+/**
+ * 「听我的演奏」：本局最后 20 秒（不足则从头，含终章）重放一遍。
+ * 玩家命中的音叠在同一窗口的伴奏上一起响；漏掉的音在计划里根本没有，
+ * 所以不会响——回放的是真实演奏，不是补全。声音全走对局用过的同一套
+ * 钢琴采样与音乐轨增益；不重跑模拟器、不重放怪物动画、不写任何存储。
+ */
+function startReplay(): void {
+  stopReplay()
+  const plan = replayPlanFor(
+    playedNotes,
+    accompanimentPlan(chart, song.accompanimentFallback ?? 'none'),
+    outcomeAt,
+    finaleAtOf(chart),
+  )
+  const bus = engine.context.createGain()
+  bus.connect(engine.musicBus)
+  replayBus = bus
+  const startAt = engine.now() + REPLAY_LEAD
+  for (const note of plan.notes) {
+    const binding = layout.keys[note.lane]
+    if (binding === undefined) continue
+    engine.scheduleAhead(startAt + note.at, (when) => piano.play(binding.note, when, bus))
+  }
+  for (const chord of plan.accompaniment) {
+    engine.scheduleAhead(startAt + chord.at, (when) => piano.play(midiToNoteName(chord.midi), when, bus))
+  }
+  debugView.replayNotes = plan.notes.length
+  debugView.replayMisses = plan.misses
+  debugView.replayPlaying = true
+}
+
+/**
+ * 结算：一张一屏可读的演奏卡（曲名 / 难度 / 评级 / 精度 / 最长连击 /
+ * 掌握度徽记 / 是否刷新纪录）+「听我的演奏」。掌握度只描述这一局。
+ */
 function showSettlement(): void {
   outcomeShown = true
   const summary = sim.summary()
   const won = outcomeResult === 'victory'
   const rating = settlement?.rating ?? 'C'
+  const mastery = settlement?.mastery ?? null
   // 走到哪：按终局那一刻的谱面时刻与总长算（纯派生，不进模拟器状态）
   const reached = progressLine(songProgress(chart, outcomeAt), outcomeReason)
+  // 演奏卡的回放读数：与点下「听我的演奏」时同一份计划（纯函数，重复算无副作用）
+  const plan = replayPlanFor(
+    playedNotes,
+    accompanimentPlan(chart, song.accompanimentFallback ?? 'none'),
+    outcomeAt,
+    finaleAtOf(chart),
+  )
+  const best = bestRecordFor(records, song.id, difficulty)
+  const recordChip =
+    settlement?.improved === true
+      ? '<span class="card-record">新纪录</span>'
+      : best === undefined
+        ? '' // 败局且无旧纪录：没有可比的对象（败局不入册）
+        : `<span class="card-best">本机最佳 ${best.rating} · 连击 ${best.maxCombo}</span>`
   showOverlay(`
-    <div class="screen">
+    <div class="screen settlement">
       <h2>${won ? '斗琴告捷' : '斗琴落败'}</h2>
-      <p>${song.title} · ${DIFFICULTY_LABELS[difficulty]} · ${won ? '墨主伏诛，全场清空' : '胜负未分，琴音再起'}</p>
       <p class="reached-line${won ? '' : ' defeat'}">${reached}</p>
-      <div class="rating-big rating-${rating}">${rating}</div>
-      ${settlement?.improved === true ? '<div class="new-record">新纪录</div>' : ''}
-      <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次</p>
-      <p>完美 ${summary.perfect} · 良好 ${summary.good} · 失误 ${summary.miss}</p>
-      <p>精度 <b>${(accuracyFor(summary) * 100).toFixed(1)}%</b></p>
+      <section class="play-card">
+        <div class="card-head">
+          <b class="card-song">${song.title}</b>
+          <span class="card-diff">${DIFFICULTY_LABELS[difficulty]}</span>
+          ${recordChip}
+        </div>
+        <div class="card-body">
+          <div class="card-rating rating-${rating}">${rating}</div>
+          <dl class="card-stats">
+            <div><dt>精度</dt><dd>${(accuracyFor(summary) * 100).toFixed(1)}%</dd></div>
+            <div><dt>最长连击</dt><dd>${summary.maxCombo}</dd></div>
+            <div><dt>掌握度</dt><dd>${masteryChip(mastery)}</dd></div>
+          </dl>
+        </div>
+        <p class="card-foot">${masteryLine(mastery)}</p>
+        <div class="card-replay">
+          <button id="btn-replay">听我的演奏</button>
+          <span class="replay-note">最后 ${Math.round(plan.duration)} 秒 · 命中 ${plan.hits} 颗 · 漏 ${plan.misses} 颗${plan.finaleAt === null ? '' : ' · 含终章'}</span>
+        </div>
+      </section>
+      <p class="stats-line">总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次 · 完美 <b>${summary.perfect}</b> · 良好 <b>${summary.good}</b> · 失误 <b>${summary.miss}</b></p>
       ${offsetAdviceLine(summary)}
       <div class="actions">
         <button id="btn-retry">再来一次（回车）</button>
@@ -512,6 +626,12 @@ function showSettlement(): void {
       </div>
     </div>`,
   )
+  debugView.mastery = mastery === null ? null : MASTERY_LABELS[mastery]
+  overlay.querySelector('#btn-replay')?.addEventListener('click', (ev) => {
+    startReplay()
+    const button = ev.currentTarget
+    if (button instanceof HTMLElement) button.textContent = '再听一遍'
+  })
   overlay.querySelector('#btn-retry')?.addEventListener('click', () => {
     void beginBattle(song, difficulty)
   })
@@ -549,6 +669,8 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   endedFreezeT = null
   overlayDueAt = 0
   settlement = null
+  playedNotes.length = 0 // 上一局的演奏记录不许串到这一局（回放只属于刚结束的那一局）
+  stopReplay()
   hideOverlay()
   roundStartAt = engine.now() + COUNT_BEATS * BEAT_SECONDS + 0.15
   screen = 'countdown'
@@ -622,6 +744,7 @@ function abandonBattle(): void {
 
 /** 终局后返回曲库（结算画面的 Esc / 按钮） */
 function returnToLibrary(): void {
+  stopReplay() // 回放只在结算这一刻有效：离开即散（未到期的调度一并丢弃）
   engine.cancelScheduled()
   showLibrary()
 }
@@ -630,6 +753,9 @@ function collect(events: readonly GameEvent[]): void {
   for (const e of events) {
     // offset 带进闪示：判定带只有 ±17px 宽，偏差只能靠数字告诉玩家（ADR-0013）
     flashes.push({ lane: e.lane, judgment: e.judgment, at: e.time, offset: e.offset })
+    // 票 19：同一批事件抄进本局演奏记录（内存）。时刻取事件自带的按键时刻，
+    // 回放因此带着玩家当时的早/晚——听起来是这一遍，而不是节拍器。
+    playedNotes.push({ lane: e.lane, judgment: e.judgment, at: e.time })
   }
 }
 
@@ -688,17 +814,24 @@ function collectBattle(events: readonly BattleEvent[]): void {
       outcomeAt = e.time
       endedAt = engine.now()
       screen = 'ended'
-      // 结算预计算：评级 + 纪录（胜局才入册，失败不更新最佳）
+      // 结算预计算：评级 + 掌握度 + 纪录（胜局才入册，失败不更新最佳）
       const summary = sim.summary()
       const rating = ratingFor(summary, e.result)
+      const accuracy = accuracyFor(summary)
+      const mastery = masteryFor({ outcome: e.result, rating, accuracy, missCount: summary.miss })
       let improved = false
       if (e.result === 'victory') {
-        const result = recordResult(records, song.id, difficulty, 'victory', rating, summary.maxCombo)
+        const result = recordResult(records, song.id, difficulty, 'victory', {
+          rating,
+          maxCombo: summary.maxCombo,
+          accuracy,
+          missCount: summary.miss,
+        })
         records = result.records
         improved = result.improved
         if (improved) saveRecords(storage, records)
       }
-      settlement = { rating, improved }
+      settlement = { rating, improved, mastery }
       // 终章宽限：收势没演完不掀结算幕布（无终章则立即）
       const finale = sustains[sustains.length - 1]
       const finaleEnd = finale !== undefined && finale.finale ? roundStartAt + finale.windowEnd : 0

@@ -27,6 +27,16 @@ export interface SongProgress {
 }
 
 /**
+ * 终章时刻（秒）：末句句末即终章余韵窗口的起点；无乐句 → null。
+ * 进度轨的朱砂点与结算回放共用这一处定义（票 17 / 票 19）。
+ */
+export function finaleAtOf(chart: Chart): number | null {
+  const phrases = chart.phrases ?? []
+  const last = phrases[phrases.length - 1]
+  return last === undefined ? null : last.sustainStart
+}
+
+/**
  * 谱面 + 当前时刻 → 进度读数。
  *
  * 时刻钳在 [0, 总长]：倒计时（t<0）读作开演前，终局后时钟若继续走也不会
@@ -50,7 +60,7 @@ export function songProgress(chart: Chart, t: number): SongProgress {
     ratio,
     phraseIndex,
     phraseCount: phrases.length,
-    finaleAt: last === undefined ? null : last.sustainStart,
+    finaleAt: finaleAtOf(chart),
     finalPhraseStart: last === undefined ? null : last.start,
   }
 }
