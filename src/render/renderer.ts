@@ -17,10 +17,13 @@
 import type { Chart, ChartNote, Lane, NoteTint } from '../core/chart'
 import { depthAt } from '../core/combat'
 import { BATTLEFIELD, JUDGMENT_WINDOWS, QINXIN } from '../core/config'
+import { CUE_FADE, CUE_LIFE, formatClock, progressCueAt, songProgress } from '../core/progress'
 import { TINT_LABELS } from '../core/tints'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
 import type { SustainEvent } from '../core/sustain'
+import { hudLayout, keyFieldWidth } from './hudGeometry'
+import type { HudLayout } from './hudGeometry'
 
 /** 判定闪示：一次判定的可见反馈 */
 export interface JudgmentFlash {
@@ -136,19 +139,18 @@ const SWEEP_LIFE = 0.34 // AoE 剑气扫场纵深（秒）
 const QINXIN_COLOR = '#3f6b63'
 const QINXIN_LIFE = 0.85
 
-/* ── HUD 锚位（工单 16）：状态一律压进下半区 ──────────────────────────
+/* ── HUD 锚位（工单 16 定案，票 17 增补）：状态压进下半区 ──────────────
  * 玩家的视线全程钉在下落音符与判定线上。旧版把血条贴在屏幕最顶边（8px
  * 通栏）、把琴心槽收在左上角（240×9）：玩家玩了两周，说「我的血条在哪」
  * 「特殊技能的进度看不到了」——条画在顶边，注意力在底边，等于没画。
- * 现在：气血条贴底通栏，琴心蓄能沿左右两条边缘竖直生长（竖直条在余光
- * 里比横条更容易扫到），读数印在槽顶。
+ * 现在：气血条贴底通栏，琴心蓄能沿左右两条边缘竖直生长，读数印在槽顶；
+ * 几何常量全部收敛在 hudGeometry（有矩形不重叠的测试钉着两个分辨率）。
+ *
+ * 唯一的例外是票 17 的进度轨：它回屏幕最顶边。它不是「此刻要不要行动」
+ * 的状态读数——血量、蓄能、连击都催人反应，必须落在视区内；进度是慢变量
+ * （一首歌几分钟走一格），只在换气时被余光瞥一眼，不与判定抢注意力。
+ * 它也因此不与两侧蓄能槽、底部气血条争位置（那三样压在下半区的边缘）。
  */
-const HUD_SIDE_INSET = 16 // 左右蓄能槽离屏幕边缘的距离
-const HUD_SIDE_WIDTH = 20 // 蓄能槽宽度（竖直条）
-const HUD_SIDE_TOP_FRAC = 0.5 // 蓄能槽顶端（屏高比例）
-const HUD_SIDE_BOTTOM_GAP = 26 // 蓄能槽底端离判定线的距离
-const HUD_HP_HEIGHT = 18 // 气血条厚度
-const HUD_HP_BOTTOM = 24 // 气血条下沿离屏幕底边的距离
 const HUD_SMALL = 13 // HUD 标签与读数的小字字号
 /** 纵深 → 战场纵向几何：琴阵线（怪物停驻处）与战场最深处（生成处） */
 const LINE_INSET = 46 // 琴阵线在下落区分界线之上的距离（px）
@@ -301,8 +303,10 @@ export class Renderer {
 
     const W = this.cssW
     const H = this.cssH
-    const judgeY = H * 0.8
-    const zoneY = H * 0.5 // 战场 / 下落区分界
+    // HUD 锚位统一由 hudGeometry 给出（矩形不重叠有测试钉着两个分辨率）
+    const hud = hudLayout(W, H, m.layout.filter((b) => !b.isBlack).length)
+    const judgeY = hud.judgeY
+    const zoneY = hud.fallingZone.y // 战场 / 下落区分界
 
     // 纸面：底色 + 一次性烘好的纸纹（纤维、远处淡青、四角收墨）
     ctx.fillStyle = PAPER
@@ -321,7 +325,7 @@ export class Renderer {
     this.drawSustain(m, W, H, judgeY)
     ctx.restore()
 
-    if (!backdrop) this.drawHud(m, geom, W, H, judgeY)
+    if (!backdrop) this.drawHud(m, geom, hud, W, H)
   }
 
   /** 终章/墨主爆裂的震屏偏移（衰减正弦，确定性） */
@@ -355,8 +359,8 @@ export class Renderer {
     whiteW: number
   } {
     const whites = layout.filter((b) => !b.isBlack).length
-    const whiteW = Math.max(38, Math.min(104, W / (whites + 1)))
-    const fieldW = whiteW * whites
+    const fieldW = keyFieldWidth(W, whites)
+    const whiteW = whites === 0 ? 0 : fieldW / whites
     const x0 = (W - fieldW) / 2
     const lanes: LaneGeom[] = []
     let whiteIndex = 0
@@ -1240,18 +1244,20 @@ export class Renderer {
     ctx.restore()
   }
 
-  /** HUD：底部气血条、左右琴心蓄能、连击与倍率、判定闪示、倒计时、挨打红晕 */
+  /** HUD：顶部进度轨、底部气血条、左右琴心蓄能、连击与倍率、判定闪示、倒计时、挨打红晕 */
   private drawHud(
     m: RenderModel,
     geom: { lanes: readonly LaneGeom[]; fieldW: number },
+    hud: HudLayout,
     W: number,
     H: number,
-    judgeY: number,
   ): void {
     const { ctx } = this
+    const judgeY = hud.judgeY
 
-    this.drawHpBar(m, geom, W, H, judgeY)
-    this.drawQinxinSlots(m, W, H, judgeY)
+    this.drawProgressRail(m, hud, W)
+    this.drawHpBar(m, hud)
+    this.drawQinxinSlots(m, hud)
 
     // 被咬反馈：判定区上缘泛红渐隐（眼皮底下的警报——血量只在被咬时下降）
     for (const b of m.bites) {
@@ -1353,18 +1359,103 @@ export class Renderer {
   }
 
   /**
+   * 进度轨（票 17，spec v1.4「进度是纯读数」）：屏幕最顶边一条细轨。
+   * 左端读已过、右端读总长（m:ss），终章位置以朱砂点预告、跨过后点亮；
+   * 每次余韵后浮出「第 N / M 句」，末句起点浮出「最后一句」。
+   *
+   * 位置是 HUD 锚位的**唯一例外**（ADR-0014：其余状态读数一律压在下半区）：
+   * 血量、蓄能、连击是催人反应的状态，必须落在视线里；进度是慢变量——一首
+   * 曲几分钟走一格，只在换气时被余光瞥一眼。它落在顶边留白里，不进下落区、
+   * 不碰两侧蓄能槽与底部气血条（几何由 hudGeometry 给出，矩形不重叠有测试）。
+   *
+   * 读数只吃 RenderModel.t（音频主时钟的谱面时刻）：暂停时主时钟冻结，恢复
+   * 后自然连续——这里不引入任何第二个时钟，也不写进模拟器状态。
+   * 倒计时（t<0）整条不画：开演前没有「已过」可言，任何读数都是乱数。
+   */
+  private drawProgressRail(m: RenderModel, hud: HudLayout, W: number): void {
+    if (m.t < 0) return
+    const { ctx } = this
+    const progress = songProgress(m.chart, m.t)
+    const { rail } = hud
+    const cy = rail.y + rail.h / 2
+
+    // 底轨：一整条淡墨，先让人看见「这里有一根尺」
+    ctx.fillStyle = 'rgba(55,50,42,0.12)'
+    this.roundRect(rail.x, rail.y, rail.w, rail.h, rail.h / 2)
+    ctx.fill()
+
+    // 已过：墨色填到比例处（不足轨厚的部分按轨厚画，圆角才不会断头）
+    const doneW = rail.w * progress.ratio
+    if (doneW > 0) {
+      ctx.fillStyle = 'rgba(55,50,42,0.5)'
+      this.roundRect(rail.x, rail.y, Math.max(rail.h, doneW), rail.h, rail.h / 2)
+      ctx.fill()
+    }
+
+    // 终章：朱砂点预告（空心），跨过即点亮（实心 + 一圈淡晕）
+    if (progress.finaleAt !== null && progress.duration > 0) {
+      const finaleX = rail.x + rail.w * Math.min(1, progress.finaleAt / progress.duration)
+      const lit = m.t >= progress.finaleAt
+      if (lit) {
+        ctx.globalAlpha = 0.16
+        ctx.fillStyle = BLOOD
+        ctx.beginPath()
+        ctx.arc(finaleX, cy, 7, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalAlpha = 1
+      }
+      ctx.fillStyle = BLOOD
+      ctx.globalAlpha = lit ? 1 : 0.55
+      ctx.beginPath()
+      ctx.arc(finaleX, cy, lit ? 3.6 : 3.1, 0, Math.PI * 2)
+      if (lit) {
+        ctx.fill()
+      } else {
+        ctx.strokeStyle = BLOOD
+        ctx.lineWidth = 1.4
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+    }
+
+    // 两端读数：左已过、右总长，同一 m:ss 口径（向下取整，末尾不打架）
+    ctx.font = `400 12px ${SERIF}`
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillStyle = 'rgba(55,50,42,0.55)'
+    ctx.textAlign = 'left'
+    ctx.fillText(formatClock(progress.elapsed), rail.x, hud.railReadingBaseline)
+    ctx.textAlign = 'right'
+    ctx.fillText(formatClock(progress.duration), rail.x + rail.w, hud.railReadingBaseline)
+
+    // 句提示：同一时刻只有一条（末句提示优先，见 progress.progressCueAt）
+    const cue = progressCueAt(m.chart, m.sustains, m.t)
+    if (cue === null) return
+    const age = m.t - cue.at
+    const fadeIn = Math.min(1, Math.max(0, age / 0.15))
+    const fadeOut = Math.min(1, Math.max(0, (CUE_LIFE - age) / CUE_FADE))
+    ctx.globalAlpha = Math.min(fadeIn, fadeOut)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    if (cue.kind === 'final') {
+      // 「最后一句」用朱砂：与句序号的墨色数字一闪可辨
+      ctx.font = `600 15px ${SERIF}`
+      ctx.fillStyle = BLOOD
+      ctx.fillText('最后一句', W / 2, hud.railCueBaseline)
+    } else {
+      ctx.font = `400 14px ${SERIF}`
+      ctx.fillStyle = 'rgba(55,50,42,0.62)'
+      ctx.fillText(`第 ${cue.index} / ${cue.count} 句`, W / 2, hud.railCueBaseline)
+    }
+    ctx.globalAlpha = 1
+  }
+
+  /**
    * 气血条（工单 16）：贴着屏幕下缘的通栏。玩家的视线在判定线与下落音符上，
    * 血条就得落在同一个视区里——旧版那条挂在屏幕最顶边，等于画在身后。
-   * 条厚 HUD_HP_HEIGHT、左端「气血」、右端当前/上限，挨咬的瞬间整条提亮
-   * 一下（伤害与条同框，不必回头找）；三成以下加一道呼吸的朱砂描边。
+   * 条身 18px、左端「气血」、右端当前/上限，挨咬的瞬间整条提亮一下
+   * （伤害与条同框，不必回头找）；三成以下加一道呼吸的朱砂描边。
    */
-  private drawHpBar(
-    m: RenderModel,
-    geom: { fieldW: number },
-    W: number,
-    H: number,
-    judgeY: number,
-  ): void {
+  private drawHpBar(m: RenderModel, hud: HudLayout): void {
     const { ctx } = this
     const frac = Math.max(0, Math.min(1, m.playerHp / m.playerMaxHp))
     const low = frac <= 0.3
@@ -1372,11 +1463,8 @@ export class Renderer {
     // 挨咬的瞬间（BITE_LIFE 内）整条提亮：脚下的警报与条是同一个信号
     const bitten = m.bites.some((b) => m.t - b.at >= 0 && m.t - b.at < BITE_LIFE)
 
-    const barW = Math.min(geom.fieldW, W * 0.5)
-    const barX = (W - barW) / 2
-    const h = HUD_HP_HEIGHT
-    // 窗口很矮时不许压到键位标签：至少落在键位下方 58px
-    const y = Math.max(judgeY + 58, H - HUD_HP_BOTTOM - h)
+    // 锚位与夹取（窗口很矮时至少落在键位下方 58px）都由 hudGeometry 给出
+    const { x: barX, y, w: barW, h } = hud.hpBar
     const filledW = Math.max(h, barW * frac)
 
     ctx.fillStyle = 'rgba(55,50,42,0.1)'
@@ -1403,8 +1491,8 @@ export class Renderer {
       ctx.globalAlpha = 1
     }
 
-    // 标签与读数：条上方两端（矮窗口里夹在键位与血条之间）
-    const labelY = Math.max(y - 8, judgeY + 46)
+    // 标签与读数：条上方两端
+    const labelY = y - 8
     ctx.textBaseline = 'alphabetic'
     ctx.font = `400 ${HUD_SMALL}px ${SERIF}`
     ctx.textAlign = 'left'
@@ -1425,18 +1513,19 @@ export class Renderer {
    * 「多少次触发一次」由槽顶的整数读数回答（已蓄 / 一层所需），分子走
    * 模拟器的整数计数（`qinxinHits`），不拿浮点比例反乘回来。
    */
-  private drawQinxinSlots(m: RenderModel, W: number, H: number, judgeY: number): void {
+  private drawQinxinSlots(m: RenderModel, hud: HudLayout): void {
     const { ctx } = this
     const frac = Math.max(0, Math.min(1, m.qinxinGauge))
     const hits = Math.max(0, Math.min(QINXIN.CHARGE_COMBOS, Math.round(m.qinxinHits)))
-    const top = Math.round(H * HUD_SIDE_TOP_FRAC)
-    const bottom = Math.round(judgeY - HUD_SIDE_BOTTOM_GAP)
-    const slotH = Math.max(HUD_SIDE_WIDTH * 2, bottom - top)
-    const slotY = bottom - slotH
-    const w = HUD_SIDE_WIDTH
 
     for (const side of ['left', 'right'] as const) {
-      const x = side === 'left' ? HUD_SIDE_INSET : W - HUD_SIDE_INSET - w
+      // 槽的锚位（离边缘 16px、顶端半屏、底端离判定线 26px）由 hudGeometry 给出
+      const slot = side === 'left' ? hud.qinxin.left.slot : hud.qinxin.right.slot
+      const x = slot.x
+      const w = slot.w
+      const slotY = slot.y
+      const slotH = slot.h
+      const bottom = slotY + slotH
 
       // 空槽：即使一炮没蓄，也看得出「这里有进度」
       ctx.fillStyle = 'rgba(63,107,99,0.14)'

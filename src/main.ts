@@ -25,6 +25,8 @@ import { loadRecords, recordResult, saveRecords, bestRecordFor } from './core/re
 import type { KeyValueStore, Records } from './core/records'
 import { accuracyFor, offsetAdvice, ratingFor } from './core/rating'
 import type { Rating } from './core/rating'
+import { CUE_LIFE, formatClock, progressCueAt, progressLine, songProgress } from './core/progress'
+import type { OutcomeReason } from './core/progress'
 import { judgedTime, loadSettings, saveSettings } from './core/settings'
 import type { Settings } from './core/settings'
 import { Simulator } from './core/simulator'
@@ -110,6 +112,9 @@ const debugView: {
   /** 琴心蓄能进度与释放次数（工单 10 浏览器实测读数） */
   qinxinGauge: number
   qinxinReleases: number
+  /** 进度读数与当前句提示（票 17 浏览器实测读数：轨画不出来也读得出数） */
+  progressRatio: number
+  progressCue: string | null
 } = {
   phase: 'title',
   t: 0,
@@ -132,6 +137,8 @@ const debugView: {
   poisonTicks: 0,
   qinxinGauge: 0,
   qinxinReleases: 0,
+  progressRatio: 0,
+  progressCue: null,
 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
@@ -162,6 +169,9 @@ let starting = false
 let roundStartAt = 0
 /** 终局信息（胜/败 + 结算），结算画面用 */
 let outcomeResult: 'victory' | 'defeat' | null = null
+/** 终局的理由与当时的谱面时刻（票 17：「走到 N%」按倒下那一刻算） */
+let outcomeReason: OutcomeReason = 'cleared'
+let outcomeAt = 0
 let outcomeShown = false
 /** 终局后画面时钟的冻结值（终章宽限期内画面仍随音频时钟走完演出） */
 let endedFreezeT: number | null = null
@@ -275,7 +285,8 @@ function showLibrary(): void {
       .map((diff) => {
         const selected = index === libSongIndex && diff === libDifficulty ? ' selected' : ''
         return `<button class="diff-cell${selected}" data-song="${index}" data-diff="${diff}">
-          <div class="diff-name">${DIFFICULTY_LABELS[diff]}</div>${bestHtml(song.id, diff)}
+          <div class="diff-name">${DIFFICULTY_LABELS[diff]}</div>
+          <div class="diff-length">${formatClock(song.charts[diff].duration)}</div>${bestHtml(song.id, diff)}
         </button>`
       })
       .join('')
@@ -480,10 +491,13 @@ function showSettlement(): void {
   const summary = sim.summary()
   const won = outcomeResult === 'victory'
   const rating = settlement?.rating ?? 'C'
+  // 走到哪：按终局那一刻的谱面时刻与总长算（纯派生，不进模拟器状态）
+  const reached = progressLine(songProgress(chart, outcomeAt), outcomeReason)
   showOverlay(`
     <div class="screen">
       <h2>${won ? '斗琴告捷' : '斗琴落败'}</h2>
       <p>${song.title} · ${DIFFICULTY_LABELS[difficulty]} · ${won ? '墨主伏诛，全场清空' : '胜负未分，琴音再起'}</p>
+      <p class="reached-line${won ? '' : ' defeat'}">${reached}</p>
       <div class="rating-big rating-${rating}">${rating}</div>
       ${settlement?.improved === true ? '<div class="new-record">新纪录</div>' : ''}
       <p class="stats-line">最大连击 <b>${summary.maxCombo}</b> · 总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次</p>
@@ -527,6 +541,8 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   resetDebugView()
   held.clear()
   outcomeResult = null
+  outcomeReason = 'cleared'
+  outcomeAt = 0
   outcomeShown = false
   endedFreezeT = null
   overlayDueAt = 0
@@ -649,6 +665,8 @@ function collectBattle(events: readonly BattleEvent[]): void {
       }
     } else if (e.type === 'outcome') {
       outcomeResult = e.result
+      outcomeReason = e.reason
+      outcomeAt = e.time
       endedAt = engine.now()
       screen = 'ended'
       // 结算预计算：评级 + 纪录（胜局才入册，失败不更新最佳）
@@ -818,7 +836,13 @@ function prune(t: number): void {
   // 下面这张表，不必再改 prune/resetFeedback 之外的地方
   const shortLived: { at: number }[][] = [flashes, hits, slains, bites, whiffs, tints, qinxins]
   for (const list of shortLived) pruneExpired(list, t, FLASH_KEEP, (item) => item.at)
-  pruneExpired(sustains, t, SUSTAIN_KEEP, (s) => s.windowEnd)
+  // 余韵事件两用：演出按窗口尾 + 残响裁，句提示（票 17）要读到触发后 2 秒——
+  // 取两者之晚。不能只按窗口尾裁：那会让「第 N / M 句」的存续期跟着谱面的
+  // 余韵窗口长度浮动（短窗口会提前消失）。
+  for (let i = sustains.length - 1; i >= 0; i -= 1) {
+    const s = sustains[i]!
+    if (t > Math.max(s.windowEnd + SUSTAIN_KEEP, s.time + CUE_LIFE)) sustains.splice(i, 1)
+  }
 }
 
 /** 非战斗画面的背景板：所选谱面的空音场（键位轨道与判定线，无音符无怪物） */
@@ -892,6 +916,10 @@ function frame(): void {
   debugView.monstersAlive = sim.monstersView().filter((mo) => mo.hp > 0 && mo.spawnAt <= t).length
   debugView.qinxinGauge = Number(sim.qinxinGauge.toFixed(3))
   debugView.qinxinReleases = sim.qinxinReleases
+  debugView.progressRatio = Number(songProgress(chart, t).ratio.toFixed(3))
+  const cue = progressCueAt(chart, sustains, t)
+  debugView.progressCue =
+    cue === null ? null : cue.kind === 'final' ? '最后一句' : `第 ${cue.index} / ${cue.count} 句`
 
   renderer.draw({
     chart,
