@@ -177,6 +177,20 @@
         font-size: 16px;
         font-weight: 600;
       }
+      .diff-length {
+        margin-top: 2px;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        color: #8a857a;
+      }
+      .reached-line {
+        font-size: 15px;
+        letter-spacing: 0.08em;
+        color: #57544c;
+      }
+      .reached-line.defeat {
+        color: #a03d2c;
+      }
       .diff-best {
         margin-top: 3px;
         font-size: 13px;
@@ -289,22 +303,148 @@
         accent-color: #37322a;
         cursor: pointer;
       }
-      /* ── 结算 ── */
-      .rating-big {
-        font-size: 128px;
+      /* ── 结算 · 演奏卡（票 19）──
+         一屏可读：字号与间距随视高收放（clamp / 短屏媒体查询），
+         800×600 与 1440×900 都不裁字、不出现横向滚动。 */
+      .screen.settlement {
+        gap: 10px;
+        padding: 16px 0;
+      }
+      .play-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: min(560px, 92vw);
+        padding: 12px 18px 10px;
+        border: 1px solid #c9c2af;
+        border-radius: 2px;
+        background: rgba(250, 247, 239, 0.86);
+        box-shadow: 0 2px 14px rgba(43, 42, 38, 0.08);
+        box-sizing: border-box;
+        text-align: left;
+      }
+      .card-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+      }
+      .card-song {
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .card-diff {
+        padding: 1px 8px;
+        border: 1px solid #c9c2af;
+        font-size: 12px;
+        color: #6c675d;
+        white-space: nowrap;
+      }
+      .card-record,
+      .card-best {
+        margin-left: auto;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .card-record {
+        padding: 1px 8px;
+        border: 1px solid #8a6d1f;
+        color: #8a6d1f;
+        letter-spacing: 0.18em;
+      }
+      .card-best {
+        color: #777166;
+        letter-spacing: 0.04em;
+      }
+      .card-body {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .card-rating {
+        flex: 0 0 auto;
+        min-width: 1.1em;
+        font-size: clamp(44px, 8.4vh, 78px);
         font-weight: 700;
         line-height: 1;
+        text-align: center;
       }
-      .new-record {
-        padding: 3px 14px;
-        border: 1px solid #8a6d1f;
+      .card-stats {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 12px;
+        margin: 0;
+        flex: 1;
+      }
+      .card-stats > div {
+        display: contents;
+      }
+      .card-stats dt {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        color: #777166;
+      }
+      .card-stats dd {
+        margin: 0;
+        font-size: clamp(15px, 2.2vh, 18px);
+        font-weight: 600;
+        color: #2b2a26;
+      }
+      .screen p.card-foot {
+        font-size: 12px;
+        line-height: 1.5;
+        color: #6c675d;
+        text-align: left;
+      }
+      .card-replay {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-top: 8px;
+        border-top: 1px dashed #d8d2c2;
+        flex-wrap: wrap;
+      }
+      .card-replay button {
+        padding: 6px 15px;
+        border: 1px solid #55503f;
         border-radius: 2px;
-        color: #8a6d1f;
-        font-size: 14px;
-        letter-spacing: 0.2em;
+        background: transparent;
+        color: #37322a;
+        font-family: inherit;
+        font-size: 15px;
+        letter-spacing: 0.12em;
+        cursor: pointer;
+      }
+      .card-replay button:hover {
+        background: rgba(55, 50, 42, 0.06);
+      }
+      .replay-note {
+        font-size: 12px;
+        color: #8a857a;
+        letter-spacing: 0.04em;
+      }
+      /* 掌握度徽记（GLOSSARY 的三个词）：只描述这一局，不是段位/成就 */
+      .mastery {
+        padding: 1px 9px;
+        border: 1px solid currentColor;
+        border-radius: 2px;
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+      }
+      .mastery-first { color: #57544c; }
+      .mastery-seasoned { color: #37322a; }
+      .mastery-mastered { color: #8a6d1f; }
+      .mastery-none { color: #a03d2c; }
+      .diff-best .mastery {
+        margin-left: 6px;
+        padding: 0 5px;
+        font-size: 11px;
       }
       .stats-line {
-        font-size: 17px;
+        font-size: 15px;
       }
       .stats-line b {
         font-weight: 700;
@@ -316,6 +456,68 @@
       @keyframes promptBreath {
         0%, 100% { opacity: 0.72; }
         50% { opacity: 1; }
+      }
+      @media (max-height: 640px) {
+        .screen.settlement {
+          gap: 7px;
+          padding: 8px 0;
+        }
+        .play-card {
+          gap: 6px;
+          padding: 9px 16px 8px;
+        }
+      }
+      /* 短窗口（≤ 660px 高）：非结算画面不许裁字（v1.4 审查 A4）。
+         800×600 下曲库内容曾高 628px、底部提示行被裁 28px 且不可滚——方向键
+         被游戏吃掉，键盘滚动指望不上，所以首先把内容收紧到一屏之内；真遇到
+         更矮的窗口，再让面板自己滚（滚轮仍可用），而不是让字掉出视口。 */
+      @media (max-height: 660px) {
+        .screen:not(.settlement) {
+          gap: 11px;
+          padding: 14px 0;
+          max-height: 100vh;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+        }
+        .screen:not(.settlement) h1 {
+          font-size: 48px;
+        }
+        .screen:not(.settlement) h2 {
+          font-size: 23px;
+        }
+        .screen:not(.settlement) .song-list {
+          gap: 7px;
+        }
+        .screen:not(.settlement) .song-row {
+          padding: 7px 14px;
+        }
+        .screen:not(.settlement) .song-name {
+          font-size: 20px;
+        }
+        .screen:not(.settlement) .piano-preview {
+          height: 64px;
+          margin-top: 5px;
+        }
+        .screen:not(.settlement) .pk {
+          top: 20px;
+          height: 42px;
+          line-height: 42px;
+        }
+        .screen:not(.settlement) .pk.black {
+          top: 0;
+          height: 30px;
+          line-height: 30px;
+        }
+        .screen:not(.settlement) .actions {
+          margin-top: 6px;
+        }
+        .screen:not(.settlement) .actions button {
+          padding: 8px 24px;
+          font-size: 16px;
+        }
+        .screen:not(.settlement) .hint {
+          margin-top: 2px;
+        }
       }
       @media (prefers-reduced-motion: reduce) {
         .screen h1,

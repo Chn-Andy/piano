@@ -25,3 +25,35 @@ describe('MIDI 调号解析（调根音，非关系大调字母）', () => {
     expect(chun.key).toEqual({ root: 'G', scale: 'major' })
   })
 })
+
+/**
+ * 分轨信息（工单 18）：伴奏声部要从「非主旋律材料」生成，适配层必须把
+ * 轨的边界与打击轨标记带出来——转换器据此判定哪一轨是主旋律、哪一轨是
+ * 左手/第二旋律声部，鼓轨永远不进和声骨架。
+ */
+describe('分轨信息（伴奏材料的来源判定）', () => {
+  it('致爱丽丝：两轨——右手（up）在前、左手（down）在后，音符带所属轨号', () => {
+    const source = parseMidi(readFileSync(join(FIXTURES, 'fur-elise.mid')))
+
+    expect(source.tracks?.map((t) => t.index)).toEqual([0, 1])
+    expect(source.tracks?.map((t) => t.percussion)).toEqual([false, false])
+    expect(source.notes.filter((n) => n.track === 0)).toHaveLength(517)
+    expect(source.notes.filter((n) => n.track === 1)).toHaveLength(388)
+  })
+
+  it('春江花月夜：三轨，鼓轨按通道 9 标记为打击乐（伴奏不吃鼓点）', () => {
+    const source = parseMidi(readFileSync(join(FIXTURES, 'chun-jiang-hua-yue-ye.mid')))
+
+    expect(source.tracks).toHaveLength(3)
+    expect(source.tracks?.map((t) => t.percussion)).toEqual([false, false, true])
+    expect(source.tracks?.[2]?.noteCount).toBe(3)
+  })
+
+  it('卡农：单轨——没有可拆的伴奏材料（这是合成铺底兜底的由来）', () => {
+    const source = parseMidi(readFileSync(join(FIXTURES, 'canon-in-d.mid')))
+
+    expect(source.tracks).toHaveLength(1)
+    expect(source.tracks?.[0]?.noteCount).toBe(138)
+    expect(source.notes.every((n) => n.track === 0)).toBe(true)
+  })
+})

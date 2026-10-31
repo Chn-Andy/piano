@@ -82,8 +82,22 @@ export class Piano {
    * 弹奏一个音名（如 'F#4'）——音频随谱面键位布局走（工单 03 起
    * 不再限于白键八度）。when 为音频时钟上的发声时刻（ADR-0010）；
    * 调用方通常传 now + 微小 ε，把声音放到音频时间线的未来，避免爆音。
+   *
+   * destination 默认仍是音乐轨（`musicBus`，受「琴声音量」控制）；票 19 的
+   * 结算回放传一条一次性的支路——离开结算画面时把那条支路 disconnect，
+   * 已经排出去的采样就整体失声（回放只在结算这一刻有效，见 ADR/spec v1.4）。
+   *
+   * gain 是**这一颗音**的力度（0..1，默认 1 = 原样，玩家自己弹的琴声一律
+   * 走默认值）：伴奏/铺底按难度分档压一档（ADR-0016「伴奏的密度与力度按
+   * 难度给」，档位在 `config.ACCOMPANIMENT_PLAN`）。采样包只有一层力度
+   * （v8），所以力度只能靠增益做——不新增素材、不改采样选择。
    */
-  play(note: string, when: number): void {
+  play(
+    note: string,
+    when: number,
+    destination: AudioNode = this.destination(),
+    gain = 1,
+  ): void {
     const semitones = semitonesFromC4(note)
 
     let native = NATIVE_SAMPLES[0]!
@@ -99,7 +113,14 @@ export class Piano {
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.playbackRate.value = 2 ** ((semitones - native.semitones) / 12)
-    source.connect(this.destination())
+    if (gain === 1) {
+      source.connect(destination)
+    } else {
+      // 力度只在这一颗音上生效：单独一颗增益节点，接完即弃（采样自己会停）
+      const level = ctx.createGain()
+      level.gain.value = Math.max(0, Math.min(1, gain))
+      source.connect(level).connect(destination)
+    }
     source.start(when)
   }
 }
