@@ -25,3 +25,9 @@
 修法：`AudioEngine` 新增 `fadeOutMusic(0.35)`（清队列 + 总线线性淡出）与 `restoreMusic()`（恢复设置音量）；
 `showSettlement()` 调前者，`beginBattle()` 与 `startReplay()` 调后者。淡出而不是硬切，是为了不让
 正在响的采样在结算那一刻被掐出爆音。
+
+**2026-11-01 · 发布记录**：随 `bdbbf1d` 发布——GitHub Pages run
+[41280786015](https://github.com/Chn-Andy/piano/actions/runs/41280786015) 绿；线上产物逐字节同哈希
+（`index.html` `4ab40136…d1dc7`、`assets/index-B2guS1-s.js` `439d513b…b7e984b98`）。
+线上实测：结算出现后 6 秒内**零新增发声**（修前同口径为 3 次 / 间隔 2s）；点「听我的演奏」仍有声
+（2.5 秒内 2 次，按钮转「再听一遍」）。
