@@ -9,7 +9,8 @@
  * - 余韵/终章（工单 04，ADR-0007）：乐句换气口处，本句剑气自判定线升腾、
  *   于战场引爆成水墨收势——墨晕、剑气笔势、墨点粒子、档位题字，规模
  *   随表现分档肉眼可辨；终章另盖朱砂印、闪帧、垂墨与震屏。演出只发生
- *   在换气口：余韵窗口内下落音符溶解暂停，窗口尾按真实时刻重新凝出。
+ *   在换气口，且画在下落音符**之下**：音符在窗口里照常下落、从不被盖住
+ *   （工单 20：早期版本冻结并淡出音符，等于没收了玩家的读谱时间）。
  * - 下半区：音符沿钢琴几何的轨道下落（白键整列、黑键嵌列，ADR-0006），
  *   压线即判定（工单 01 行为沿用）。
  */
@@ -333,6 +334,10 @@ export class Renderer {
     this.drawSustain(m, W, H, judgeY)
     ctx.restore()
 
+    // 下落音符画在战场与余韵/终章演出**之上**（工单 20）：演出可以铺满上半区，
+    // 但永远不许盖住玩家正在读的那几颗音。
+    this.drawNotes(m, geom, judgeY)
+
     if (!backdrop) this.drawHud(m, geom, hud, W, H)
   }
 
@@ -460,7 +465,7 @@ export class Renderer {
   ): void {
     const { ctx } = this
 
-    // 余韵窗口内：音符悬浮溶解（余光是给上半区演出的），窗口尾重新凝出
+    // 余韵窗口内：轨道染色与判定线收淡（演出让出上半区），音符照常下落不受影响
     const gate = this.sustainGate(m)
 
     // 按住键位的墨色淡染
@@ -529,37 +534,65 @@ export class Renderer {
     ctx.stroke()
     this.dryBrush(geom.x0 - 6, geom.x0 + geom.fieldW + 6, judgeY, 0.85 * lineDim * breathe)
 
-    // 下落音符（黑键音块更窄更深，读作黑键）；
-    // 余韵窗口内位置冻结在窗口起点、透明度走「溶解→凝出」包络——
-    // 窗口尾声音符按真实时刻位置重新凝出（节奏无缝，跳变被零透明度掩去）
+    // 键位标签（底部，兼作键位图示；黑键略小略高，读作嵌行）
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    m.layout.forEach((binding) => {
+      const g = geom.lanes[binding.lane]!
+      const isHeld = m.held.has(binding.lane)
+      const y = judgeY + (binding.isBlack ? 24 : 34)
+      ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${SERIF}`
+      ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.62)'
+      ctx.fillText(binding.key, g.cx, y)
+      if (isHeld) {
+        ctx.fillStyle = 'rgba(55,50,42,0.62)'
+        ctx.fillRect(g.cx - 9, y + 13, 18, 2.5)
+      }
+    })
+
+    // 下落音符不在这里画：它们必须在余韵/终章的演出之上（见 drawNotes）。
+  }
+
+  /**
+   * 下落音符（黑键音块更窄更深，读作黑键）。
+   *
+   * 这一层画在**余韵/终章演出之上**（工单 20）：原先音符画在演出之下，且余韵
+   * 窗口内位置冻结、透明度走「溶解→凝出」包络——玩家在窗口里整整一秒多看不见
+   * 任何音符，等于把下一批音的读谱时间没收了（用户反馈「余韵会遮盖所有音符」）。
+   * 现在音符不再冻结、也不再淡出：演出发生在战场上半区、在音符之下，节奏可读性
+   * 永远优先（ADR-0004 的「下落音符稳如磐石」）。ADR-0007 的「暂停音符下落」
+   * 因此被取代：换气口由演出自己表达，不由抽掉音符表达。
+   */
+  private drawNotes(
+    m: RenderModel,
+    geom: { lanes: readonly LaneGeom[] },
+    judgeY: number,
+  ): void {
+    const { ctx } = this
     for (const note of m.pending) {
       const dt = note.time - m.t
       if (dt > VISIBLE_AHEAD) continue
-      const freezeAt = gate?.freezeAt
-      const shownDt = freezeAt != null ? note.time - freezeAt : dt
-      const y = judgeY - shownDt * FALL_SPEED
+      const y = judgeY - dt * FALL_SPEED
       const g = geom.lanes[note.lane]
       if (g === undefined) continue
       const noteH = 26
       if (y < -noteH - 28) continue
-      const alpha = gate === null ? 1 : gate.alpha
-      if (alpha <= 0.01) continue
       const noteW = g.width * (g.black ? 0.78 : 0.56)
       // 临近判定线略压扁，读作「落到纸上」；不影响判定时刻
-      const near = Math.max(0, Math.min(1, 1 - shownDt / 0.16))
+      const near = Math.max(0, Math.min(1, 1 - dt / 0.16))
       const drawH = noteH * (1 - 0.16 * near)
       const tintStyle = note.tint === undefined ? null : TINT_STYLE[note.tint]
-      ctx.globalAlpha = alpha
-      if (shownDt > 0.02 && shownDt < VISIBLE_AHEAD) {
-        const trail = Math.min(18, shownDt * FALL_SPEED * 0.22)
+      ctx.globalAlpha = 1
+      if (dt > 0.02 && dt < VISIBLE_AHEAD) {
+        const trail = Math.min(18, dt * FALL_SPEED * 0.22)
         const grad = ctx.createLinearGradient(0, y - drawH / 2 - trail, 0, y - drawH / 2)
         const trailInk = tintStyle?.color ?? (g.black ? DEEP_INK : INK)
         grad.addColorStop(0, 'rgba(55,50,42,0)')
         grad.addColorStop(1, trailInk)
-        ctx.globalAlpha = alpha * 0.22
+        ctx.globalAlpha = 0.22
         ctx.fillStyle = grad
         ctx.fillRect(g.cx - noteW * 0.22, y - drawH / 2 - trail, noteW * 0.44, trail)
-        ctx.globalAlpha = alpha
+        ctx.globalAlpha = 1
       }
       if (tintStyle !== null) {
         ctx.fillStyle = tintStyle.glow
@@ -585,24 +618,8 @@ export class Renderer {
       ctx.lineWidth = 1.5
       this.roundRect(g.cx - noteW / 2 + 3, y - drawH / 2 + 3, noteW - 6, Math.max(2, drawH - 6), 2)
       ctx.stroke()
-      ctx.globalAlpha = 1
     }
-
-    // 键位标签（底部，兼作键位图示；黑键略小略高，读作嵌行）
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    m.layout.forEach((binding) => {
-      const g = geom.lanes[binding.lane]!
-      const isHeld = m.held.has(binding.lane)
-      const y = judgeY + (binding.isBlack ? 24 : 34)
-      ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${SERIF}`
-      ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.62)'
-      ctx.fillText(binding.key, g.cx, y)
-      if (isHeld) {
-        ctx.fillStyle = 'rgba(55,50,42,0.62)'
-        ctx.fillRect(g.cx - 9, y + 13, 18, 2.5)
-      }
-    })
+    ctx.globalAlpha = 1
   }
 
   /**
@@ -1630,21 +1647,17 @@ export class Renderer {
   /* ── 余韵与终章演出（工单 04 的情绪核心；全部程序绘制，无外部素材） ── */
 
   /**
-   * 余韵窗口的下落区闸门：窗口内音符「溶解→凝出」的透明度包络与冻结时刻。
-   * 窗口头 22% 音符悬浮原地渐隐（余光让给上半区演出），
-   * 窗口尾 22% 在真实时刻位置重新凝出（节奏无缝——恢复时零跳变可见）。
+   * 余韵窗口内的「收势」包络：只作用于轨道染色与判定线的浓淡（演出是安静的）。
+   * 音符本身**不再**受它影响——早期版本在这里冻结并淡出音符，玩家在窗口里看不见
+   * 任何音（工单 20 修掉了这件事）。
    */
-  private sustainGate(m: RenderModel): { alpha: number; freezeAt: number | null } | null {
+  private sustainGate(m: RenderModel): { alpha: number } | null {
     for (const s of m.sustains) {
       if (m.t < s.time || m.t > s.windowEnd) continue
       const w = (m.t - s.time) / Math.max(1e-6, s.windowEnd - s.time)
-      if (w < 0.22) {
-        return { alpha: 1 - w / 0.22, freezeAt: s.time }
-      }
-      if (w > 0.78) {
-        return { alpha: (w - 0.78) / 0.22, freezeAt: null }
-      }
-      return { alpha: 0, freezeAt: s.time }
+      if (w < 0.22) return { alpha: 1 - w / 0.22 }
+      if (w > 0.78) return { alpha: (w - 0.78) / 0.22 }
+      return { alpha: 0 }
     }
     return null
   }
