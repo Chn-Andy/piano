@@ -129,6 +129,34 @@ export class AudioEngine {
     this.queue.length = 0
   }
 
+  /**
+   * 收尾：丢弃所有未到期的调度，并在 seconds 内把音乐轨淡出。
+   *
+   * 终局画面出现时音乐必须停——伴奏是开局时**整首一次性**排进队列的，只在
+   * 「放弃 / 回曲库」里清队列的话，输了以后它会继续在结算背后演奏到曲末
+   * （工单 21 的来由）。已经响着的采样不是被硬掐断，而是随总线一起淡出，
+   * 听不到爆音。
+   */
+  fadeOutMusic(seconds = 0.35): void {
+    this.queue.length = 0
+    const gain = this.music
+    const ctx = this.ctx
+    if (gain === null || ctx === null) return
+    const now = ctx.currentTime
+    gain.gain.cancelScheduledValues(now)
+    gain.gain.setValueAtTime(gain.gain.value, now)
+    gain.gain.linearRampToValueAtTime(0, now + Math.max(0.01, seconds))
+  }
+
+  /** 把音乐轨恢复到设置里的音量（开新局、重放演奏时调用；与 fadeOutMusic 配对） */
+  restoreMusic(): void {
+    const gain = this.music
+    const ctx = this.ctx
+    if (gain === null || ctx === null) return
+    gain.gain.cancelScheduledValues(ctx.currentTime)
+    this.applyVolumes()
+  }
+
   /** 倒计时木鱼声（程序合成；末拍重音）。 */
   countdownTick(when: number, accent: boolean): void {
     const ctx = this.context

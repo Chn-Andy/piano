@@ -584,6 +584,8 @@ function stopReplay(): void {
  */
 function startReplay(): void {
   stopReplay()
+  // 结算已经把音乐轨淡到 0，重放要先把总线抬回来——否则「听我的演奏」是无声的
+  engine.restoreMusic()
   const plan = replayPlanFor(
     playedNotes,
     accompanimentPlan(chart, song.accompanimentFallback ?? 'none'),
@@ -617,6 +619,9 @@ function startReplay(): void {
  */
 function showSettlement(): void {
   outcomeShown = true
+  // 终局即收声：伴奏是开局整首排好的，这里不清队列 + 淡出，它会一直演到曲末
+  // （工单 21）。0.35 秒淡出，正在响的采样不会被硬掐断。
+  engine.fadeOutMusic(0.35)
   const summary = sim.summary()
   const won = outcomeResult === 'victory'
   const rating = settlement?.rating ?? 'C'
@@ -714,6 +719,8 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   settlement = null
   playedNotes.length = 0 // 上一局的演奏记录不许串到这一局（回放只属于刚结束的那一局）
   stopReplay()
+  // 上一局结算把音乐轨淡到了 0：开新局先把总线抬回设置的音量（与 fadeOutMusic 配对）
+  engine.restoreMusic()
   hideOverlay()
   roundStartAt = engine.now() + COUNT_BEATS * BEAT_SECONDS + 0.15
   screen = 'countdown'
