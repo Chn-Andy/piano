@@ -31,3 +31,8 @@
 （`index.html` `4ab40136…d1dc7`、`assets/index-B2guS1-s.js` `439d513b…b7e984b98`）。
 线上实测：结算出现后 6 秒内**零新增发声**（修前同口径为 3 次 / 间隔 2s）；点「听我的演奏」仍有声
 （2.5 秒内 2 次，按钮转「再听一遍」）。
+
+**2026-11-01 · itch 发布记录（v1.4 全量，含 17–21 号票）**：`npm run pack:itch` → `butler push chn-andy/xinqin:html5 --userversion 1.4.0`，
+build **✓ #2267311**（from #2248916），upload `#20119642`，包 977,655 字节 / 7 个文件；
+公开页 `chn-andy.itch.io/xinqin` 的嵌入指向 `html-classic.itch.zone/html/20119642-2267311/index.html`，
+该页引用的正是 `assets/index-B2guS1-s.js`（与 Pages 同一份产物）；点击 Run game 后进入键位引导，游戏可玩。
