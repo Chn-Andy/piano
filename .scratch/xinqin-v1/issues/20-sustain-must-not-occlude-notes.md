@@ -20,3 +20,9 @@
 放在 `drawBattle`/`drawSustain` 之后、`drawHud` 之前；`sustainGate` 只保留「轨道染色/判定线收淡」
 的用途，删掉冻结时刻与音符透明度。验证方式：在余韵窗口内抓帧（触发后 0.3 秒与 0.8 秒各一帧），
 确认音符在墨爆之上、无遮挡；窗口外的普通帧同样正常（多颗音照常下落）。
+
+**2026-11-01 · 发布记录**：随 `b0ffff3` 发布——GitHub Pages run
+[41279433104](https://github.com/Chn-Andy/piano/actions/runs/41279433104) 绿；线上产物逐字节同哈希
+（`index.html` `e102bef7…cbce66`、`assets/index-C8HH2sIy.js` `320a153e…ee80b5e19`）。
+线上实测（`?auto=perfect&song=fur-elise&chart=hard`）：剑鸣触发后 0.43 秒抓帧，三颗下落音符
+（D / L / P 列）清晰可见，D 列那颗压在墨爆之上——演出未遮音符。
