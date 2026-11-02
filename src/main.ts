@@ -15,14 +15,16 @@
 
 import { AudioEngine } from './audio/engine'
 import { Piano } from './audio/piano'
-import { DIFFICULTY_LABELS, SONGS, songById } from './charts'
+import { SONGS, songById } from './charts'
 import type { SongEntry } from './charts'
 import type { Chart, DifficultyName, Lane } from './core/chart'
 import { accompanimentPlan } from './core/accompaniment'
 import { comboMultiplierFor } from './core/combat'
 import { ACCOMPANIMENT_PLAN, PLAYER_MAX_HP } from './core/config'
+import { LOCALES, LOCALE_NAMES, copyFor, resolveLocale } from './i18n'
+import type { Locale, Messages } from './i18n'
 import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
-import { masteryFor, masteryFromRecord, masteryLine, MASTERY_LABELS } from './core/mastery'
+import { masteryFor, masteryFromRecord, masteryLine } from './core/mastery'
 import type { MasteryLevel } from './core/mastery'
 import {
   REPLAY_LABELS,
@@ -178,6 +180,60 @@ let records: Records = loadRecords(storage)
 let settings: Settings = loadSettings(storage)
 engine.setVolumes(settings.musicVolume, settings.sfxVolume) // start() 前记下，启动即生效
 
+/* ── 界面语言（ADR-0017）──────────────────────────────────────────── */
+/**
+ * 当前语言。`settings.locale` 为 null 表示跟随系统：每次启动按浏览器语言重新
+ * 判定（zh 开头判中文、其余英文），玩家手动选过才钉死（resolveLocale）。
+ */
+let locale: Locale = resolveLocale(navigator.language, settings.locale)
+/** 当前语言的一整套文案：DOM 壳与画布都从这里取字，切语言时整体换掉 */
+let copy: Messages = copyFor(locale)
+
+/** 把语言落到文档上：根元素 `lang`（屏幕阅读器与字体回退都看它）与标签页标题 */
+function syncDocument(): void {
+  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+  document.title = copy['app.docTitle']
+}
+
+/**
+ * 切语言：换整套文案 → 同步文档 → 记住选择 → 重渲染当前这一屏。
+ *
+ * 只重画、不重开对局：语言与判定窗口、血量、充能、纪录都无关（spec v1.5
+ * 故事 29/30）。可切的入口只有曲库角标与设置面板两处，都在对局之外。
+ */
+function applyLocale(next: Locale, remember: boolean): void {
+  locale = next
+  copy = copyFor(locale)
+  syncDocument()
+  if (remember) {
+    settings = { ...settings, locale: next }
+    saveSettings(storage, settings)
+  }
+  if (screen === 'library') showLibrary()
+  else if (screen === 'settings') showSettings()
+  else if (screen === 'title') showTitle()
+}
+
+/** 难度、掌握度的显示名都走文案表；这两张映射把「数据里的短键」接到「表里的键」 */
+type MasteryLabelKey = 'mastery.first' | 'mastery.seasoned' | 'mastery.mastered' | 'mastery.none'
+const MASTERY_LABEL_KEY: Readonly<Record<MasteryLevel | 'none', MasteryLabelKey>> = {
+  first: 'mastery.first',
+  seasoned: 'mastery.seasoned',
+  mastered: 'mastery.mastered',
+  none: 'mastery.none',
+}
+type DifficultyLabelKey = 'diff.easy' | 'diff.medium' | 'diff.hard'
+const DIFFICULTY_LABEL_KEY: Readonly<Record<DifficultyName, DifficultyLabelKey>> = {
+  easy: 'diff.easy',
+  medium: 'diff.medium',
+  hard: 'diff.hard',
+}
+
+function difficultyLabel(difficulty: DifficultyName): string {
+  return copy[DIFFICULTY_LABEL_KEY[difficulty]]
+}
+
+
 /* ── 对局上下文 ────────────────────────────────────────────────────── */
 let song: SongEntry = DEV_SONG ?? SONGS[0]!
 let difficulty: DifficultyName = DEV_DIFFICULTY
@@ -274,7 +330,7 @@ function hideOverlay(): void {
 
 function showFatal(message: string): void {
   showOverlay(
-    `<div class="screen"><h1>心琴</h1><p>${message}</p></div>`,
+    `<div class="screen"><h1>${copy['app.title']}</h1><p>${message}</p></div>`,
   )
 }
 
@@ -304,14 +360,14 @@ function pianoPreviewHtml(keys: readonly KeyBinding[], lit?: ReadonlySet<string>
 
 function masteryChip(level: MasteryLevel | null): string {
   const key = level ?? 'none'
-  return `<span class="mastery mastery-${key}">${MASTERY_LABELS[key]}</span>`
+  return `<span class="mastery mastery-${key}">${copy[MASTERY_LABEL_KEY[key]]}</span>`
 }
 
 function bestHtml(songId: string, diff: DifficultyName): string {
   const best = bestRecordFor(records, songId, diff)
-  if (best === undefined) return '<span class="diff-best">未挑战</span>'
+  if (best === undefined) return `<span class="diff-best">${copy['library.bestNone']}</span>`
   // 徽记读本机纪录（旧纪录缺精度/失误数 → 降级为只能判到弹熟，见 mastery.ts）
-  return `<span class="diff-best"><span class="best-rating rating-${best.rating}">${best.rating}</span>连击 ${best.maxCombo}${masteryChip(masteryFromRecord(best))}</span>`
+  return `<span class="diff-best"><span class="best-rating rating-${best.rating}">${best.rating}</span>${copy['library.combo'](best.maxCombo)}${masteryChip(masteryFromRecord(best))}</span>`
 }
 
 function showLibrary(): void {
@@ -322,31 +378,36 @@ function showLibrary(): void {
       .map((diff) => {
         const selected = index === libSongIndex && diff === libDifficulty ? ' selected' : ''
         return `<button class="diff-cell${selected}" data-song="${index}" data-diff="${diff}">
-          <div class="diff-name">${DIFFICULTY_LABELS[diff]}</div>
+          <div class="diff-name">${difficultyLabel(diff)}</div>
           <div class="diff-length">${formatClock(song.charts[diff].duration)}</div>${bestHtml(song.id, diff)}
         </button>`
       })
       .join('')
     return `<div class="song-row">
-      <div><div class="song-name">${song.title}</div><div class="song-blurb">${song.blurb}</div></div>
+      <div><div class="song-name">${song.libraryTitle[locale]}</div><div class="song-blurb">${song.blurb[locale]}</div></div>
       <div class="diff-cells">${cells}</div>
     </div>`
   }).join('')
   const selectedChart = SONGS[libSongIndex]!.charts[libDifficulty]
   const selectedLayout = layoutForKeys(selectedChart.meta?.keys ?? [])
+  // 角标写「将要切过去的语言」：中文界面显示 EN，英文界面显示「中」
+  const other: Locale = locale === 'zh' ? 'en' : 'zh'
   showOverlay(`
     <div class="screen">
-      <h1>心琴 · 曲库</h1>
+      <div class="library-head">
+        <h1>${copy['library.heading']}</h1>
+        <button id="btn-lang" class="lang-badge" title="${LOCALE_NAMES[other]}">${LOCALE_NAMES[other]}</button>
+      </div>
       <div class="song-list">${rows}</div>
       <div>
-        <p>键位图示 · ${SONGS[libSongIndex]!.title}（${DIFFICULTY_LABELS[libDifficulty]}）</p>
+        <p>${copy['library.keysHeading'](SONGS[libSongIndex]!.title[locale], difficultyLabel(libDifficulty))}</p>
         ${pianoPreviewHtml(selectedLayout.keys)}
       </div>
       <div class="actions">
-        <button id="btn-start">开战（回车）</button>
-        <button id="btn-settings" class="secondary">设置（音量 / 偏移）</button>
+        <button id="btn-start">${copy['btn.fight']}</button>
+        <button id="btn-settings" class="secondary">${copy['btn.settings']}</button>
       </div>
-      <p class="hint">↑↓ 选曲 · ←→ 选难度 · 回车 开战 · 白键 A S D F J K L，黑键嵌于其间</p>
+      <p class="hint">${copy['library.hint']}</p>
     </div>`,
   )
   overlay.querySelectorAll<HTMLElement>('.diff-cell').forEach((cell) => {
@@ -360,6 +421,9 @@ function showLibrary(): void {
     void beginBattle(SONGS[libSongIndex]!, libDifficulty)
   })
   overlay.querySelector('#btn-settings')?.addEventListener('click', showSettings)
+  overlay.querySelector('#btn-lang')?.addEventListener('click', () => {
+    applyLocale(other, true)
+  })
 }
 
 /**
@@ -370,29 +434,34 @@ function showLibrary(): void {
 function showSettings(): void {
   screen = 'settings'
   const pct = (v: number): string => `${Math.round(v * 100)}%`
-  const offsetLabel = (ms: number): string => (ms === 0 ? '0 毫秒' : `${ms > 0 ? '+' : ''}${ms} 毫秒`)
+  const offsetLabel = (ms: number): string => copy['settings.offsetValue'](ms)
+  const localeButton = (code: Locale): string =>
+    `<button class="lang-option${code === locale ? ' selected' : ''}" data-locale="${code}">${LOCALE_NAMES[code]}</button>`
   showOverlay(`
     <div class="screen">
-      <h2>设置</h2>
+      <h2>${copy['settings.heading']}</h2>
       <div class="settings-box">
         <div class="setting-row">
-          <label for="sl-offset">音画偏移 <b id="offset-value">${offsetLabel(settings.offsetMs)}</b></label>
+          <label for="sl-offset">${copy['settings.offset']} <b id="offset-value">${offsetLabel(settings.offsetMs)}</b></label>
           <input id="sl-offset" type="range" min="-150" max="150" step="5" value="${settings.offsetMs}">
-          <p class="hint">判定公平性校准：正 = 你的按键被判定得整体更「早」，负 = 更「晚」。
-          若明明按准了、结果总偏「迟」（画面比声音慢的设备常见），向正调；总偏「早」则向负调。范围 ±150 毫秒。</p>
+          <p class="hint">${copy['settings.offsetHint']}</p>
         </div>
         <div class="setting-row">
-          <label for="sl-music">琴声音量 <b id="music-value">${pct(settings.musicVolume)}</b></label>
+          <label for="sl-music">${copy['settings.music']} <b id="music-value">${pct(settings.musicVolume)}</b></label>
           <input id="sl-music" type="range" min="0" max="100" step="1" value="${Math.round(settings.musicVolume * 100)}">
         </div>
         <div class="setting-row">
-          <label for="sl-sfx">战斗音效音量 <b id="sfx-value">${pct(settings.sfxVolume)}</b></label>
+          <label for="sl-sfx">${copy['settings.sfx']} <b id="sfx-value">${pct(settings.sfxVolume)}</b></label>
           <input id="sl-sfx" type="range" min="0" max="100" step="1" value="${Math.round(settings.sfxVolume * 100)}">
-          <p class="hint">琴声是你弹出的钢琴与自动伴奏（音乐轨）；剑气、受击、余韵等是战斗音效（音效轨），两轨独立调节。</p>
+          <p class="hint">${copy['settings.sfxHint']}</p>
+        </div>
+        <div class="setting-row">
+          <label>${copy['settings.language']}</label>
+          <div class="lang-switch">${LOCALES.map(localeButton).join('')}</div>
         </div>
       </div>
       <div class="actions">
-        <button id="btn-settings-back">返回曲库（Esc）</button>
+        <button id="btn-settings-back">${copy['btn.backLibrary']}</button>
       </div>
     </div>`,
   )
@@ -417,6 +486,12 @@ function showSettings(): void {
     engine.setVolumes(settings.musicVolume, sfxVolume)
     overlay.querySelector('#sfx-value')!.textContent = pct(sfxVolume)
   })
+  overlay.querySelectorAll<HTMLElement>('.lang-switch button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const next = button.dataset.locale
+      if (next === 'zh' || next === 'en') applyLocale(next, true)
+    })
+  })
   overlay.querySelector('#btn-settings-back')?.addEventListener('click', showLibrary)
   // 键盘玩家：焦点落在偏移滑条上，方向键即微调（原生 range 行为）
   overlay.querySelector<HTMLInputElement>('#sl-offset')?.focus()
@@ -425,15 +500,16 @@ function showSettings(): void {
 function showTitle(): void {
   screen = 'title'
   const firstVisit = !tutorialDone(storage)
+  const mode = AUTO === 'perfect' ? copy['dev.autoplay'] : AUTO === 'idle' ? copy['dev.idle'] : copy['dev.manual']
   showOverlay(`
     <div class="screen">
-      <h1 class="title-mark">心琴</h1>
+      <h1 class="title-mark" data-seal="${copy['app.seal']}">${copy['app.title']}</h1>
       <p>${DEV_BATTLE
-        ? `开发验证 · ${DEV_SONG?.title ?? ''}（${DIFFICULTY_LABELS[DEV_DIFFICULTY]}）· ${AUTO === 'perfect' ? '自动完美弹奏' : AUTO === 'idle' ? '静置败局' : '手动'}`
+        ? copy['dev.battle'](DEV_SONG?.title[locale] ?? '', difficultyLabel(DEV_DIFFICULTY), mode)
         : firstVisit
-          ? '水墨斗琴 · 音符落处，剑气斩妖'
+          ? copy['title.tagline']
           : ''}</p>
-      <p class="start-prompt">点击此处或按任意键 · ${firstVisit && !DEV_BATTLE ? '开始键位引导' : '开始'}</p>
+      <p class="start-prompt">${firstVisit && !DEV_BATTLE ? copy['title.startFirst'] : copy['title.start']}</p>
     </div>`,
   )
 }
@@ -452,7 +528,7 @@ async function proceedFromTitle(): Promise<void> {
   } catch (err) {
     console.error('音频初始化失败', err)
     starting = false
-    showFatal('音频初始化失败，请刷新重试')
+    showFatal(copy['fatal.audio'])
     return
   }
   starting = false
@@ -468,10 +544,10 @@ function showTutorial(): void {
   const keys = layoutForKeys([...WHITE_KEY_NOTES]).keys
   showOverlay(`
     <div class="screen">
-      <h2>键位引导</h2>
-      <p>依次按下白键，听一声、亮一键——把手放上琴位</p>
+      <h2>${copy['tutorial.heading']}</h2>
+      <p>${copy['tutorial.prompt']}</p>
       ${pianoPreviewHtml(keys, tutorialLit)}
-      <p class="hint">全部点亮或按 Esc 进入曲库（约 ${TUTORIAL_SECONDS} 秒后自动继续）</p>
+      <p class="hint">${copy['tutorial.hint'](TUTORIAL_SECONDS)}</p>
     </div>`,
   )
 }
@@ -502,11 +578,11 @@ function finishTutorial(): void {
 function showPause(): void {
   showOverlay(`
     <div class="screen">
-      <h2>暂停</h2>
-      <p>琴音暂歇，墨妖亦止步</p>
+      <h2>${copy['pause.heading']}</h2>
+      <p>${copy['pause.line']}</p>
       <div class="actions">
-        <button id="btn-resume">继续（Esc）</button>
-        <button id="btn-abandon" class="secondary">放弃 · 返回曲库（Q）</button>
+        <button id="btn-resume">${copy['btn.resume']}</button>
+        <button id="btn-abandon" class="secondary">${copy['btn.abandon']}</button>
       </div>
     </div>`,
   )
@@ -649,7 +725,7 @@ function showSettlement(): void {
       <section class="play-card">
         <div class="card-head">
           <b class="card-song">${song.title}</b>
-          <span class="card-diff">${DIFFICULTY_LABELS[difficulty]}</span>
+          <span class="card-diff">${difficultyLabel(difficulty)}</span>
           ${recordChip}
         </div>
         <div class="card-body">
@@ -674,7 +750,7 @@ function showSettlement(): void {
       </div>
     </div>`,
   )
-  debugView.mastery = mastery === null ? null : MASTERY_LABELS[mastery]
+  debugView.mastery = mastery === null ? null : copy[MASTERY_LABEL_KEY[mastery]]
   replayPlayback = null // 新的一张演奏卡：回放状态从「未播」开始
   replayLabelShown = REPLAY_LABELS.idle
   syncReplayState()
@@ -698,7 +774,7 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   } catch (err) {
     console.error('音频初始化失败', err)
     starting = false
-    showFatal('音频初始化失败，请刷新重试')
+    showFatal(copy['fatal.audio'])
     return
   }
   starting = false
@@ -1145,7 +1221,7 @@ function frame(): void {
   const cue = progressCueAt(chart, sustains, t)
   debugView.progressRatio = Number(progress.ratio.toFixed(3))
   debugView.progressCue =
-    cue === null ? null : cue.kind === 'final' ? '最后一句' : `第 ${cue.index} / ${cue.count} 句`
+    cue === null ? null : cue.kind === 'final' ? copy['hud.lastPhrase'] : copy['hud.phrase'](cue.index, cue.count)
 
   renderer.draw({
     chart,
@@ -1187,5 +1263,6 @@ window.addEventListener('resize', () => renderer.resize())
 requestAnimationFrame(frame)
 
 // 首次进入先引导（标题→引导→曲库）；老玩家直接进曲库；开发钩子经标题直开战
+syncDocument()
 showTitle()
 if (!DEV_BATTLE && tutorialDone(storage)) showLibrary()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MASTERY_LABELS, masteryFor, masteryFromRecord } from './mastery'
+import { masteryFor, masteryFromRecord } from './mastery'
 import { bestRecordFor, recordResult } from './records'
 import type { Records } from './records'
 
@@ -65,11 +65,10 @@ describe('掌握度：从本机纪录读', () => {
     expect(masteryFromRecord({ rating: 'A', maxCombo: 61, accuracy: 0.88, missCount: 1 })).toBe('seasoned')
   })
 
-  it('徽记文案用 GLOSSARY 的三个词；没有档位时读「未入册」', () => {
-    expect(MASTERY_LABELS.first).toBe('初演')
-    expect(MASTERY_LABELS.seasoned).toBe('弹熟')
-    expect(MASTERY_LABELS.mastered).toBe('精熟')
-    expect(MASTERY_LABELS.none).toBe('未入册')
+  it('徽记文案归文案表管（ADR-0017）：纯层只判档，不再持有中文标签', () => {
+    // 三个词的显示名在 i18n 的 `mastery.*`（copy.test.ts 守着键集与语言）；
+    // 这里只钉住「纯层不再导出标签表」这件事——判档结果仍是那三个 short key。
+    expect(masteryFor({ outcome: 'victory', rating: 'C', accuracy: 0.5, missCount: 9 })).toBe('first')
   })
 })
 

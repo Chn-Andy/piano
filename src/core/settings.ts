@@ -10,12 +10,19 @@
  */
 
 import type { KeyValueStore } from './records'
+import type { Locale } from '../i18n/locale'
 
 /** 玩家设置：音画偏移（毫秒）与两轨音量（0..1，1 = 满增益直通） */
 export interface Settings {
   readonly offsetMs: number
   readonly musicVolume: number
   readonly sfxVolume: number
+  /**
+   * 界面语言（ADR-0017）。**null = 跟随系统**：每次启动按浏览器语言重新判定，
+   * 玩家手动选过才钉死。它存在设置里而不是单独的键：语言与音量、偏移一样
+   * 是「这台机器上的偏好」，一个键一套数据，读取路径只有一条。
+   */
+  readonly locale: Locale | null
 }
 
 /** 存储键（版本化：结构不兼容时升版本号，旧键任其沉没——records 同例） */
@@ -27,12 +34,21 @@ export const OFFSET_LIMIT_MS = 150
 /**
  * 默认设置：零偏移 + 两轨满音量——音量默认直通（增益 1），出厂混音即
  * 各音效合成时定标的相对响度（见 docs/calibration.md），出厂手感与
- * 工单 05 既有手感完全一致。
+ * 工单 05 既有手感完全一致。语言默认「跟随系统」（ADR-0017）。
  */
 export const DEFAULT_SETTINGS: Settings = {
   offsetMs: 0,
   musicVolume: 1,
   sfxVolume: 1,
+  locale: null,
+}
+
+/**
+ * 语言的读取校验：只有 `'zh'` / `'en'` 两个合法值，其余（含旧版数据里根本没有
+ * 这个字段、手改存储写进来别的词）一律归 null = 跟随系统。
+ */
+function coerceLocale(raw: unknown): Locale | null {
+  return raw === 'zh' || raw === 'en' ? raw : null
 }
 
 /** 数值钳制与类型校验：字段缺失或类型不对取默认，越界钳回范围 */
@@ -45,6 +61,7 @@ function coerceSettings(raw: unknown): Settings {
     offsetMs: clamp(num(src.offsetMs, DEFAULT_SETTINGS.offsetMs), -OFFSET_LIMIT_MS, OFFSET_LIMIT_MS),
     musicVolume: clamp(num(src.musicVolume, DEFAULT_SETTINGS.musicVolume), 0, 1),
     sfxVolume: clamp(num(src.sfxVolume, DEFAULT_SETTINGS.sfxVolume), 0, 1),
+    locale: coerceLocale(src.locale),
   }
 }
 

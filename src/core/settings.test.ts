@@ -36,12 +36,12 @@ function memoryStore(initial?: Record<string, string>): KeyValueStore & {
 describe('设置存取', () => {
   it('空存储读出默认设置：零偏移、两轨满音量（默认保持既有混音不变）', () => {
     expect(loadSettings(memoryStore())).toEqual(DEFAULT_SETTINGS)
-    expect(DEFAULT_SETTINGS).toEqual({ offsetMs: 0, musicVolume: 1, sfxVolume: 1 })
+    expect(DEFAULT_SETTINGS).toEqual({ offsetMs: 0, musicVolume: 1, sfxVolume: 1, locale: null })
   })
 
   it('保存 → 读取 往返一致（键名版本化）', () => {
     const store = memoryStore()
-    const settings = { offsetMs: 40, musicVolume: 0.7, sfxVolume: 0.3 }
+    const settings = { offsetMs: 40, musicVolume: 0.7, sfxVolume: 0.3, locale: 'en' as const }
     saveSettings(store, settings)
 
     expect(store.data.get(SETTINGS_KEY)).toBeDefined()
@@ -64,19 +64,19 @@ describe('设置存取', () => {
     const store = memoryStore({
       [SETTINGS_KEY]: JSON.stringify({ offsetMs: 999, musicVolume: 2, sfxVolume: -0.5 }),
     })
-    expect(loadSettings(store)).toEqual({ offsetMs: OFFSET_LIMIT_MS, musicVolume: 1, sfxVolume: 0 })
+    expect(loadSettings(store)).toEqual({ offsetMs: OFFSET_LIMIT_MS, musicVolume: 1, sfxVolume: 0, locale: null })
 
     const flipped = memoryStore({
       [SETTINGS_KEY]: JSON.stringify({ offsetMs: -999, musicVolume: -1, sfxVolume: 9 }),
     })
-    expect(loadSettings(flipped)).toEqual({ offsetMs: -OFFSET_LIMIT_MS, musicVolume: 0, sfxVolume: 1 })
+    expect(loadSettings(flipped)).toEqual({ offsetMs: -OFFSET_LIMIT_MS, musicVolume: 0, sfxVolume: 1, locale: null })
   })
 
   it('字段类型不对（字符串/缺失）→ 该字段取默认，其余照常读取', () => {
     const store = memoryStore({
       [SETTINGS_KEY]: JSON.stringify({ offsetMs: 'late', musicVolume: 0.5 }),
     })
-    expect(loadSettings(store)).toEqual({ offsetMs: 0, musicVolume: 0.5, sfxVolume: 1 })
+    expect(loadSettings(store)).toEqual({ offsetMs: 0, musicVolume: 0.5, sfxVolume: 1, locale: null })
   })
 
   it('写入失败（如配额满）静默：设置非关键数据，不拖垮对局', () => {
@@ -128,5 +128,45 @@ describe('音画偏移作用路径（进模拟器前的时间平移）', () => {
   it('零偏移 = 现状回归保护：压线判定与既有口径一致（边界含）', () => {
     expect(judgeWith(0.05, 0)).toBe('Perfect') // Perfect 窗边界含
     expect(judgeWith(0.12, 0)).toBe('Good') // Good 窗边界含
+  })
+})
+
+/**
+ * 界面语言（ADR-0017）：它存在同一套设置里，但**不许动设置键版本号**——
+ * 升 v2 会让每个玩家已有的音量与音画偏移一起清零。旧数据没有这个字段时
+ * 读作 null（跟随系统），不是报错、不是中文。
+ */
+describe('界面语言的持久化（ADR-0017）', () => {
+  it('旧版设置（没有 locale 字段）读作 null = 跟随系统', () => {
+    const store = memoryStore({
+      [SETTINGS_KEY]: JSON.stringify({ offsetMs: 20, musicVolume: 0.5, sfxVolume: 0.4 }),
+    })
+    const loaded = loadSettings(store)
+    expect(loaded.locale).toBeNull()
+    // 其余字段照旧读出来（升版本号会把它们清掉，这条就是防那件事）
+    expect(loaded.offsetMs).toBe(20)
+    expect(loaded.musicVolume).toBe(0.5)
+    expect(loaded.sfxVolume).toBe(0.4)
+  })
+
+  it('非法语言值归 null（手改存储或将来删语言都不会把界面卡死）', () => {
+    for (const raw of ['"ja"', '"ZH"', '42', 'null', '""']) {
+      const store = memoryStore({
+        [SETTINGS_KEY]: `{"offsetMs":0,"musicVolume":1,"sfxVolume":1,"locale":${raw}}`,
+      })
+      expect(loadSettings(store).locale, raw).toBeNull()
+    }
+  })
+
+  it('两种合法语言读回来原样（玩家手选过就钉死）', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      const store = memoryStore()
+      saveSettings(store, { ...DEFAULT_SETTINGS, locale })
+      expect(loadSettings(store).locale).toBe(locale)
+    }
+  })
+
+  it('键名仍是 v1：语言不升版（升版 = 清掉玩家的音量与校准）', () => {
+    expect(SETTINGS_KEY).toBe('xinqin.settings.v1')
   })
 })

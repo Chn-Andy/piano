@@ -12,19 +12,16 @@ import { MASTERY } from './config'
 import type { BestRecord } from './records'
 import type { Rating } from './rating'
 
-/** 掌握度三档（顺序即高低，供比较与徽记取色） */
+/**
+ * 掌握度三档（顺序即高低，供比较与徽记取色）
+ */
 export type MasteryLevel = 'first' | 'seasoned' | 'mastered'
 
-/**
- * 徽记文案（GLOSSARY 的三个词 + 败局的「未入册」）。
- * 只用这三个词：掌握度是「这一局发生过什么」的读数，不是段位、等级或成就。
+/*
+ * 徽记的三个词（初演 / 弹熟 / 精熟，外加败局的「未入册」）不在这里：
+ * 它们是玩家可见文案，已收进文案表的 `mastery.*`（ADR-0017）。纯层只判档，
+ * 不持有任何要显示给人看的字。
  */
-export const MASTERY_LABELS: Readonly<Record<MasteryLevel | 'none', string>> = {
-  first: '初演',
-  seasoned: '弹熟',
-  mastered: '精熟',
-  none: '未入册',
-}
 
 /** 判档依据：一局的可观察结果 */
 export interface MasteryFacts {

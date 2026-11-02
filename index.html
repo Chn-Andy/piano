@@ -58,7 +58,7 @@
         animation: inkBreath 6s ease-in-out infinite;
       }
       .screen h1.title-mark::after {
-        content: '琴';
+        content: attr(data-seal);
         position: absolute;
         right: -1.55em;
         bottom: -0.1em;
@@ -125,6 +125,51 @@
         font-family: inherit;
         font-size: 15px;
         text-align: center;
+      }
+      /* ── 语言切换（ADR-0017）──
+         两个入口：曲库标题右侧的常驻角标（不必进设置就能切）与设置面板里那一行。
+         角标上写的是**将要切过去的语言**（中文界面显示 EN），设置里两个选项
+         各用该语言自己的写法（中文 / English），读不懂另一种的人也找得到。 */
+      .library-head {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+      }
+      .lang-badge {
+        padding: 2px 9px;
+        border: 1px solid #c9c2af;
+        border-radius: 2px;
+        background: transparent;
+        color: #57544c;
+        font-family: inherit;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+      }
+      .lang-badge:hover {
+        border-color: #55503f;
+        color: #2b2a26;
+      }
+      .lang-switch {
+        display: flex;
+        gap: 8px;
+      }
+      .lang-switch button {
+        flex: 0 0 auto;
+        padding: 6px 18px;
+        border: 1px solid #c9c2af;
+        border-radius: 2px;
+        background: #f6f2e8;
+        color: #57544c;
+        font-family: inherit;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .lang-switch button.selected {
+        border-color: #2b2a26;
+        border-width: 2px;
+        background: #faf7ef;
+        color: #1d1a15;
       }
       /* ── 曲库 ── */
       .song-list {
