@@ -4,13 +4,35 @@
 
 **Blocked by:** 22、23、24（需要英文模式的菜单、结算与战斗画面才能拍到）
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 英文 5 张截图入 `docs/screenshots/` 与 `itch-assets/`；中文 5 张保留不动
-- [ ] 中英并列封面一张（左 *XinQin* 右 心琴，同构图同配色）；原三张封面文件不动
-- [ ] itch 描述中英两段（中文在前、英文在后）；`description-plain.txt` 与粘贴单同步
-- [ ] 发布粘贴单增「双语发布怎么填」一节：10 张截图顺序、封面选哪张、两段描述位置、更新说明怎么写
-- [ ] `README.en.md` 新建 + `README.md` 顶部一行互链；中文 README 内容不删
-- [ ] 11 屏走查清单逐条过（标题 / 曲库 / 设置 / 键位引导 / 暂停 / 战斗 HUD / 余韵与终章 / 结算与回放 / 致命错 / 角标切换即时生效 / itch 描述与 10 张截图），用户确认
-- [ ] `npm test` 与 `npm run build` 绿
-- [ ] 实际上传 itch 由用户确认后单独执行（本票只备素材与粘贴单）
+**Branch:** `feat/v1.5-bilingual`
+
+- [x] 英文 5 张截图入 `docs/screenshots/` 与 `itch-assets/`；中文 5 张保留不动
+- [x] 中英并列封面一张（左 *XinQin* 右 心琴，同构图同配色）；原三张封面文件不动
+- [x] itch 描述中英两段（中文在前、英文在后）；`description-plain.txt` 与粘贴单同步
+- [x] 发布粘贴单增「双语发布怎么填」一节：10 张截图顺序、封面选哪张、两段描述位置、更新说明怎么写
+- [x] `README.en.md` 新建 + `README.md` 顶部一行互链；中文 README 内容不删
+- [x] 11 屏走查清单逐条过（标题 / 曲库 / 设置 / 键位引导 / 暂停 / 战斗 HUD / 余韵与终章 / 结算与回放 / 致命错 / 角标切换即时生效 / itch 描述与 10 张截图），用户确认
+- [x] `npm test` 与 `npm run build` 绿
+- [x] 实际上传 itch 由用户确认后单独执行（本票只备素材与粘贴单）
+
+## Comments
+
+**2026-11-01 · 素材与验收同批**
+
+- 英文 5 张截图（1280×720）：`docs/screenshots/en/{library,battle,ink-tide,sword-song,finale-seal}.png`，
+  同份进 `itch-assets/en/`；中文 5 张原样保留。
+- **中英并列封面**：新增可重做源 `itch-assets/cover-bilingual.html`（630×500，dsf=2 出 1260×1000），
+  产出 `cover-bilingual-630x500.png` 与 `cover-bilingual-2x.png`；原三张封面文件未动。
+- itch 双语：新增 `description-en.txt`；`UPLOAD-SHEET.md` 增「4b 双语发布怎么填」
+  （title 不动 / tagline 两行 / 封面选哪张 / 10 张截图顺序 / 描述两段）。
+- README：`README.en.md` 新建；`README.md` 顶部互链并补 v1.5 一行。
+- **11 屏走查（英文模式）**：标题 ✓ / 曲库 ✓ / 设置 ✓ / 键位引导 ✓ / 暂停 ✓ / 战斗 HUD ✓ /
+  余韵与终章 ✓（截图即证据：*Sword Song* 爆发、*Finale* 朱印完整不溢出）/ 结算与回放 ✓ /
+  致命错 ✓（拦掉采样请求实测 `XinQin / Audio failed to start. Reload to try again.`）/
+  角标切换即时生效 ✓ / itch 描述与 10 张截图 ✓。
+- **一处按实测改版式**：曲名栏 180px 装不下 *Spring River*（0.12em 字距实测约 187px 会折行），
+  给英文加 `html[lang='en'] .song-name { letter-spacing: 0.04em }`（约 165px 单行），
+  中文仍是 0.12em——**栏宽没动**（D10）。
+- 实际 itch 上传未做：等用户确认后单独执行。

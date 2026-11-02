@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>XinQin · bilingual cover</title>
+    <!--
+      itch 封面的可重做源（票 25）：630×500 CSS 像素，deviceScaleFactor=2 截图
+      得到官方 1260×1000 二倍图，再缩一张 630×500。铁律是「中英都能读」——
+      左 XinQin、右 心琴，同一份水墨构图：只挂一张封面的 itch 页对两种语言的
+      读者都成立。重新出图：npm run dev，打开本文件按 630×500 截 2x。
+    -->
+    <style>
+      html, body { margin: 0; background: #efe9dc; }
+      #capture {
+        position: relative;
+        width: 630px;
+        height: 500px;
+        overflow: hidden;
+        background: #efe9dc;
+        font-family: 'Songti SC', 'Noto Serif SC', 'SimSun', serif;
+        color: #1d1a15;
+      }
+      /* 纸面：极淡的横向纤维 */
+      #capture::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(to bottom, rgba(55,50,42,0.028) 0 1px, transparent 1px 7px);
+      }
+      .stack { position: absolute; left: 46px; top: 42px; width: 330px; }
+      .latin {
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+        font-size: 56px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        line-height: 1;
+      }
+      .han-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+      .han { font-size: 38px; font-weight: 600; letter-spacing: 0.34em; line-height: 1; }
+      /* 朱印：中文模式印「琴」、英文模式印 X——封面两样都出现，读作落款 */
+      .seal {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 2px solid #a03d2c;
+        border-radius: 2px;
+        color: #a03d2c;
+        font-size: 20px;
+        line-height: 1;
+        transform: rotate(-6deg);
+        opacity: 0.88;
+      }
+      .rule { width: 240px; height: 1px; background: #55503f; opacity: 0.45; margin: 20px 0 16px; }
+      .tag-en {
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+        font-size: 17px;
+        letter-spacing: 0.01em;
+        color: #2b2a26;
+      }
+      .tag-zh { margin-top: 10px; font-size: 15px; letter-spacing: 0.08em; color: #6c675d; }
+      /* 右侧：两位水墨剑客剪影对峙（纯 CSS 形状，与游戏内的程序化水墨同源） */
+      .field { position: absolute; right: 24px; top: 52px; width: 232px; height: 268px; }
+      .field span { position: absolute; display: block; background: #37322a; }
+      .field .line { height: 1px; background: #8a857a; opacity: 0.32; }
+      .duelist { width: 22px; height: 86px; border-radius: 44% 44% 26% 26% / 62% 62% 38% 38%; }
+      .blade { width: 84px; height: 3px; border-radius: 2px; transform-origin: left center; }
+      /* 底部键帽：与曲库里的键位提示同一套字母 */
+      .keys { position: absolute; left: 46px; bottom: 58px; display: flex; gap: 6px; }
+      .key {
+        width: 34px; height: 34px;
+        border: 1px solid #b7b1a1;
+        border-bottom-width: 4px;
+        border-radius: 2px;
+        background: #faf7ef;
+        color: #57544c;
+        font-size: 15px;
+        line-height: 34px;
+        text-align: center;
+      }
+      .key.ink { background: #37322a; color: #efe9dc; border-color: #37322a; }
+      .key.blood { background: #a03d2c; color: #efe9dc; border-color: #a03d2c; }
+      .foot {
+        position: absolute; left: 46px; bottom: 28px;
+        font-size: 11px; letter-spacing: 0.2em; color: #8a857a;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="capture">
+      <div class="stack">
+        <div class="latin">XinQin</div>
+        <div class="han-row">
+          <div class="han">心琴</div>
+          <div class="seal">琴</div>
+        </div>
+        <div class="rule"></div>
+        <div class="tag-en">A duel in ink. Every note a blade.</div>
+        <div class="tag-zh">水墨斗琴 · 音符落处，剑气斩妖</div>
+      </div>
+
+      <div class="field">
+        <span class="line" style="left: 0; top: 60px; width: 232px"></span>
+        <span class="line" style="left: 0; top: 160px; width: 232px"></span>
+        <span class="line" style="left: 0; top: 260px; width: 232px"></span>
+        <span class="duelist" style="left: 44px; top: 76px; transform: rotate(8deg)"></span>
+        <span class="blade" style="left: 58px; top: 116px; transform: rotate(-40deg)"></span>
+        <span class="duelist" style="left: 166px; top: 96px; transform: rotate(-9deg) scale(0.9)"></span>
+        <span class="blade" style="left: 128px; top: 132px; transform: rotate(42deg)"></span>
+      </div>
+
+      <div class="keys">
+        <span class="key">A</span>
+        <span class="key ink">W</span>
+        <span class="key">S</span>
+        <span class="key ink">E</span>
+        <span class="key">D</span>
+        <span class="key blood">F</span>
+        <span class="key">J</span>
+        <span class="key ink">U</span>
+        <span class="key">K</span>
+      </div>
+      <div class="foot">RHYTHM · KEYBOARD · INK-WASH WUXIA</div>
+    </div>
+  </body>
+</html>

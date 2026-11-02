@@ -4,16 +4,34 @@
 
 **Blocked by:** 无（可立即开始）
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 文案表模块落地：键联合类型 + 中英两份字典（`Record` 穷举，漏键即 `tsc` 失败）；插值句子为函数
-- [ ] 语言解析纯函数覆盖分支：`zh-CN` / `zh-TW` / `en-US` / 空串 / 未知 × 已存偏好为空或显式值
-- [ ] 设置增加 `locale`（`'zh' | 'en' | null`）；旧数据读入为 null（跟随系统）、非法值归 null、写入读回一致；**音量与音画偏移不受影响，设置键不升版本**
-- [ ] 设置面板一行语言切换 + 曲库标题右侧「中 / EN」角标；切换即重渲染当前画面，`<html lang>` 与页面标题同步
-- [ ] 标题屏英文可用：*XinQin* 字距拉开的大字、副题 *A duel in ink. Every note a blade.*、开始提示
-- [ ] 曲库英文可用：三曲双语名（*Canon in D* / *Für Elise* / *Spring River*，曲库行只用短名）、blurb、难易三档、未挑战/新纪录/本机最佳、键位图示说明、按钮与按键提示行
-- [ ] 设置英文可用：音画偏移（含长段说明）、琴声音量、战斗音效音量、返回曲库
-- [ ] 键位引导、暂停、致命错三屏英文可用
-- [ ] 不引入 i18n 库；不打包字体
-- [ ] 测试：字典键集对拍、语言解析分支、设置读写（先例 `settings.test.ts`）；原有 349 项全绿，`npm run build` 绿
-- [ ] 曲库曲名栏不折行（180px 栏宽不动，*Spring River* 单行放下）
+**Branch:** `feat/v1.5-bilingual`
+
+- [x] 文案表模块落地：键联合类型 + 中英两份字典（`Record` 穷举，漏键即 `tsc` 失败）；插值句子为函数
+- [x] 语言解析纯函数覆盖分支：`zh-CN` / `zh-TW` / `en-US` / 空串 / 未知 × 已存偏好为空或显式值
+- [x] 设置增加 `locale`（`'zh' | 'en' | null`）；旧数据读入为 null（跟随系统）、非法值归 null、写入读回一致；**音量与音画偏移不受影响，设置键不升版本**
+- [x] 设置面板一行语言切换 + 曲库标题右侧「中 / EN」角标；切换即重渲染当前画面，`<html lang>` 与页面标题同步
+- [x] 标题屏英文可用：*XinQin* 字距拉开的大字、副题 *A duel in ink. Every note a blade.*、开始提示
+- [x] 曲库英文可用：三曲双语名（*Canon in D* / *Für Elise* / *Spring River*，曲库行只用短名）、blurb、难易三档、未挑战/新纪录/本机最佳、键位图示说明、按钮与按键提示行
+- [x] 设置英文可用：音画偏移（含长段说明）、琴声音量、战斗音效音量、返回曲库
+- [x] 键位引导、暂停、致命错三屏英文可用
+- [x] 不引入 i18n 库；不打包字体
+- [x] 测试：字典键集对拍、语言解析分支、设置读写（先例 `settings.test.ts`）；原有 349 项全绿，`npm run build` 绿
+- [x] 曲库曲名栏不折行（180px 栏宽不动，*Spring River* 单行放下）
+
+## Comments
+
+**2026-11-01 · 实现与验证同批（commit `8e1c6d5`）**
+
+- **缝 A（新）**：`src/i18n/` —— `Messages` 接口 + 中英两份实现（少一条键即 `tsc` 失败）、插值句子是函数、
+  `copyFor(locale)` 取一整套；`resolveLocale` 纯函数按 `zh` 前缀判定，空值/未知一律英文兜底。
+- **缝 B（既有 settings 纯层）**：加 `locale` 字段，键仍是 `xinqin.settings.v1`（升版会清掉音量与偏移）；
+  旧数据没有该字段时读作 null ＝ 跟随系统，非法值归 null。
+- **两个入口**：设置面板一行（中文 / English 各自用本语言写法）+ 曲库标题右侧角标（写「将要切过去的语言」）；
+  切换即重渲染当前画面、同步 `<html lang>` 与标签页标题、写入设置。
+- **曲库**：`SongEntry` 的 title / libraryTitle / blurb 三处双语；曲名一句两长
+  （*Spring River* / *Moonlight on the Spring River*）；难度名与掌握度徽记离开纯层。
+- **浏览器实测**（1280×720，locale=en）：标题 / 曲库 / 设置 / 键位引导 / 暂停 / 致命错六屏文本零汉字；
+  角标与设置切换即时生效、localStorage 落 `"locale":"en"`、`lang` 与 title 同步。
+- 349 → 368 项测试、`npm run build` 绿。

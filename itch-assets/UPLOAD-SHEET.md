@@ -26,13 +26,45 @@
 上传本目录的 **`cover-630x500.png`**（630×500，官方推荐尺寸）。
 如需更清晰可传 `cover-final.png`（1260×1000，2 倍图）。
 
-## 4. 截图（按顺序上传，itch 建议 3-5 张）
+## 4. 截图（按顺序上传；双语发布用 10 张，中文在前）
+
+中文 5 张（v1.1 起就在）：
 
 1. `shot-曲库.png`
 2. `shot-战斗中.png`
 3. `shot-墨潮·纵深.png`
 4. `shot-余韵·剑鸣.png`
 5. `shot-终章·印章.png`
+
+英文 5 张（v1.5 新增，同目录 `en/`，源文件另存 `docs/screenshots/en/`）：
+
+6. `en/library.png`
+7. `en/battle.png`
+8. `en/ink-tide.png`
+9. `en/sword-song.png`
+10. `en/finale-seal.png`
+
+## 4b. 双语发布怎么填（v1.5 起）
+
+**一个页面装两种语言**（ADR-0017：不开第二个 itch 页——一个 zip、一个语言开关，
+两页会让每次发版都要推两遍、两处写更新说明）。
+
+- **Title** 保持 `心琴 · XinQin`：已经是双语，不必改。
+- **Tagline** 填两行（itch 的短描述支持换行）：
+  ```
+  水墨武侠 × 钢琴节奏战斗：音符落处，剑气斩妖。
+  A duel in ink. Every note a blade.
+  ```
+- **Cover** 传 `cover-bilingual-630x500.png`（1260×1000 二倍图同名 `-2x`）。
+  这一张就是为双语做的：左 *XinQin*、右 心琴、中英两行标语。原 `cover-630x500.png`
+  与 `cover-final.png` 保留在仓库里，不再上传（itch 一页只能挂一张封面）。
+  封面可重做：源文件 `cover-bilingual.html`（630×500，按 deviceScaleFactor=2 截 2x）。
+- **Screenshots** 按上面 10 张的顺序传：中文 5 张在前（现有中文读者），英文 5 张在后。
+- **Description** 用 `description-plain.txt`（中文）整段贴进富文本编辑器，
+  空一行，再把 `description-en.txt`（英文）整段贴在同一页下半部分。
+  两个小标题「玩法」「Keys」各自用 ¶ → Header 2。
+- **更新说明** 建议两句：`v1.5 双语界面：默认跟随系统语言，曲库角标与设置面板可随时切换（英文模式全英文）。` /
+  `v1.5 bilingual UI: follows your browser language, switchable any time from the library badge or settings.`
 
 ## 5. 上传包
 

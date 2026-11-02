@@ -193,6 +193,12 @@
         font-weight: 600;
         letter-spacing: 0.12em;
       }
+      /* 英文曲名要收一点字距：曲名栏 180px，*Spring River* 12 个字符在 0.12em
+         下实测约 187px 会折行；收到 0.04em 后约 165px，单行放下（票 25）。
+         中文曲名照旧 0.12em——汉字宽，字距是这套版式的一部分。 */
+      html[lang='en'] .song-name {
+        letter-spacing: 0.04em;
+      }
       .song-blurb {
         font-size: 13px;
         color: #8a857a;
