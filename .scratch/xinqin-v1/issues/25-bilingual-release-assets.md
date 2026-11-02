@@ -36,3 +36,12 @@
   给英文加 `html[lang='en'] .song-name { letter-spacing: 0.04em }`（约 165px 单行），
   中文仍是 0.12em——**栏宽没动**（D10）。
 - 实际 itch 上传未做：等用户确认后单独执行。
+
+**2026-11-01 · 发布回读记录**
+
+- `feat/v1.5-bilingual` → `main`（fast-forward，22–25 共 4 个 commit），同时推 Gitea（origin）与 GitHub。
+- **GitHub Pages 已回读**：线上 `assets/index-DdhTndKa.js` 与本地 `dist/` 同哈希，`lang-badge` 在产物里 —— 线上就是这一版。
+- **itch 已上传**：`butler push --userversion 1.5.0` → build **#2274899**（from #2267311），CHANNEL html5 已切换；
+  包 981,266 字节、`index.html` 在包根、7 个条目，zip sha256 前 16 位 `baab2f6ad95ef9b9`。
+- **待网页端完成的**（butler 只推构建，itch 无页面 API）：Title / Tagline 两行 / 封面换 `cover-bilingual-630x500.png` /
+  10 张截图顺序（中文 5 在前）/ 描述中英两段 / 更新说明两句 —— 按 `UPLOAD-SHEET.md` 的「4b 双语发布怎么填」抄。
