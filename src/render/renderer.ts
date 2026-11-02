@@ -20,7 +20,10 @@ import { depthAt } from '../core/combat'
 import { BATTLEFIELD, JUDGMENT_WINDOWS, QINXIN } from '../core/config'
 import { CUE_FADE, CUE_LIFE, formatClock } from '../core/progress'
 import type { ProgressCue, SongProgress } from '../core/progress'
-import { TINT_LABELS } from '../core/tints'
+import type { Locale } from '../i18n/locale'
+import type { Messages } from '../i18n/messages'
+import { zh } from '../i18n/zh'
+import { finaleSealBox, fitLabelFontSize } from './labelGeometry'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
 import type { SustainEvent } from '../core/sustain'
@@ -190,13 +193,13 @@ const INK_GRAVITY = 110
 
 /** 各档余韵的视觉参数（minor→grand 逐档拉开：粒子数、墨晕半径、笔势数、标签字号） */
 const TIER_SHOW = [
-  { label: '余韵', particles: 16, wash: 0.13, arcs: 1, labelSize: 30 },
-  { label: '墨浪', particles: 52, wash: 0.24, arcs: 3, labelSize: 44 },
-  { label: '剑鸣', particles: 110, wash: 0.38, arcs: 5, labelSize: 58 },
+  { labelKey: 'sustain.minor', particles: 16, wash: 0.13, arcs: 1, labelSize: 30 },
+  { labelKey: 'sustain.major', particles: 52, wash: 0.24, arcs: 3, labelSize: 44 },
+  { labelKey: 'sustain.grand', particles: 110, wash: 0.38, arcs: 5, labelSize: 58 },
 ] as const
 
 /** 终章（加强版）：在 grand 之上再放大，另配朱砂印章 */
-const FINALE_SHOW = { label: '终章', particles: 180, wash: 0.52, arcs: 7, labelSize: 82 }
+const FINALE_SHOW = { labelKey: 'sustain.finale', particles: 180, wash: 0.52, arcs: 7, labelSize: 82 } as const
 
 const PAPER = '#efe9dc'
 /** 纸色高光：刃口、音符湿边，与纸面同色 */
@@ -205,24 +208,34 @@ const INK = '#37322a'
 const DEEP_INK = '#1d1a15'
 const BLOOD = '#a03d2c'
 const COOL_WASH = 'rgba(63,107,99,0.035)'
-const SERIF = '"Noto Serif SC", "Songti SC", "SimSun", serif'
+/** 中文衬线栈（宋体骨架，水墨调性） */
+const SERIF_ZH = '"Noto Serif SC", "Songti SC", "SimSun", serif'
+/**
+ * 英文衬线栈（ADR-0017）：英文模式在栈首前置拉丁衬线——中文字体的拉丁
+ * 部分在 Windows 上是打字机味，与水墨调性不搭。后面仍留着中文栈兜底，
+ * 好让品牌字与个别残留字符有字可用。不打包字体（零体积）。
+ */
+const SERIF_EN = '"Iowan Old Style", "Palatino Linotype", Georgia, "Noto Serif SC", "Songti SC", "SimSun", serif'
 
 /** 三色的墨色（工单 09）：寒音青、毒音苍、爆音朱——都压在水墨色域内，不抢纸面色 */
-const TINT_STYLE: Record<NoteTint, { label: string; color: string; glow: string; wash: string }> = {
+const TINT_STYLE: Record<
+  NoteTint,
+  { labelKey: 'tint.cold' | 'tint.toxic' | 'tint.blast'; color: string; glow: string; wash: string }
+> = {
   cold: {
-    label: TINT_LABELS.cold,
+    labelKey: 'tint.cold',
     color: '#3d5f7d',
     glow: 'rgba(61,95,125,0.22)',
     wash: 'rgba(61,95,125,0.07)',
   },
   toxic: {
-    label: TINT_LABELS.toxic,
+    labelKey: 'tint.toxic',
     color: '#4a6b3a',
     glow: 'rgba(74,107,58,0.22)',
     wash: 'rgba(74,107,58,0.07)',
   },
   blast: {
-    label: TINT_LABELS.blast,
+    labelKey: 'tint.blast',
     color: '#a8402c',
     glow: 'rgba(168,64,44,0.24)',
     wash: 'rgba(168,64,44,0.08)',
@@ -235,10 +248,13 @@ const TINT_WASH_LENGTH = 210
 /** 异色反馈的存续（秒）：色笔与题字 */
 const TINT_LIFE = 0.55
 
-const TIER_STYLE: Record<'Perfect' | 'Good' | 'Miss', { label: string; color: string }> = {
-  Perfect: { label: '完美', color: '#8a6d1f' },
-  Good: { label: '良好', color: '#37322a' },
-  Miss: { label: '失误', color: '#a03d2c' },
+const TIER_STYLE: Record<
+  'Perfect' | 'Good' | 'Miss',
+  { labelKey: 'judge.perfect' | 'judge.good' | 'judge.miss'; color: string }
+> = {
+  Perfect: { labelKey: 'judge.perfect', color: '#8a6d1f' },
+  Good: { labelKey: 'judge.good', color: '#37322a' },
+  Miss: { labelKey: 'judge.miss', color: '#a03d2c' },
 }
 
 /**
@@ -246,13 +262,6 @@ const TIER_STYLE: Record<'Perfect' | 'Good' | 'Miss', { label: string; color: st
  * 玩家看不出自己是早了还是晚了——这个数字是唯一的学习通道，也是「老是
  * 偏晚 → 去设置里把音画偏移调正」的依据。整 0 毫秒记「正点」。
  */
-function offsetLabel(offset: number): string {
-  const ms = Math.round(offset * 1000)
-  if (ms === 0) return '正点'
-  return `${ms < 0 ? '早' : '晚'} ${Math.abs(ms)}`
-}
-
-const COUNT_NUMERALS = ['四', '三', '二', '一']
 
 /** 一次余韵演出的全程时长（谱面时间轴）：主体窗口 + 残响尾巴 */
 export function sustainLife(s: SustainEvent): number {
@@ -279,11 +288,42 @@ interface LaneGeom {
 
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D
+  /** 当前语言的一整套文案（ADR-0017）：画布上的字全部由它给，不再就地写死 */
+  private copy: Messages = zh
+  private locale: Locale = 'zh'
+  /** 和弦重击标号在参考字号下的实测宽度（按词缓存：同一帧里同词只量一次） */
+  private heavyWidthCache: { text: string; at: number; width: number } | null = null
   private cssW = 0
   private cssH = 0
   /** 烘好的纸纹；尺寸或 dpr 变了才重绘，逐帧只贴图 */
   private paperTex: HTMLCanvasElement | null = null
   private paperKey = ''
+
+  /**
+   * 判定偏差的小字（ADR-0013）：早/晚 + 毫秒。完美带在屏幕上只有 ±17px，
+   * 玩家看不出自己是早了还是晚了——这个数字是唯一的学习通道，也是「老是
+   * 偏晚 → 去设置里把音画偏移调正」的依据。整 0 毫秒读作「正点」/ on time。
+   */
+  private offsetLabel(offset: number): string {
+    const ms = Math.round(offset * 1000)
+    if (ms === 0) return this.copy['offset.onTime']
+    return ms < 0 ? this.copy['offset.early'](Math.abs(ms)) : this.copy['offset.late'](Math.abs(ms))
+  }
+
+  /** 当前语言的字体栈（英文模式前置拉丁衬线，见 SERIF_EN） */
+  private get serif(): string {
+    return this.locale === 'en' ? SERIF_EN : SERIF_ZH
+  }
+
+  /**
+   * 切语言：文案与字体栈一起换。渲染循环每帧读这两个字段，所以切语言后
+   * 下一帧就是新语言——不需要重开对局，也不碰任何对局状态（ADR-0017）。
+   */
+  setCopy(copy: Messages, locale: Locale): void {
+    this.copy = copy
+    this.locale = locale
+    this.heavyWidthCache = null
+  }
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d')
@@ -541,7 +581,7 @@ export class Renderer {
       const g = geom.lanes[binding.lane]!
       const isHeld = m.held.has(binding.lane)
       const y = judgeY + (binding.isBlack ? 24 : 34)
-      ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${SERIF}`
+      ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${this.serif}`
       ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.62)'
       ctx.fillText(binding.key, g.cx, y)
       if (isHeld) {
@@ -797,9 +837,9 @@ export class Renderer {
       ctx.globalAlpha = (1 - p) ** 1.6
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.font = '700 22px ' + SERIF
+      ctx.font = '700 22px ' + this.serif
       ctx.fillStyle = QINXIN_COLOR
-      ctx.fillText('琴心通明', cx, cy + 2)
+      ctx.fillText(this.copy['hud.clarity'], cx, cy + 2)
       ctx.globalAlpha = 1
     }
 
@@ -1253,18 +1293,30 @@ export class Renderer {
     if (lord) {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.font = `700 15px ${SERIF}`
+      ctx.font = `700 15px ${this.serif}`
       ctx.fillStyle = BLOOD
-      ctx.fillText('墨主', cx, barY + barH + 12)
+      ctx.fillText(this.copy['hud.lord'], cx, barY + barH + 12)
     }
 
     // 和弦重击字符反馈
     if (heavy) {
+      // 中文一个「重」字撑得住的字号，换成 HEAVY 会宽出 2.75 倍（ADR-0017）：
+      // 按实测宽度收到 1.4 个半径以内，位置与颜色不动
+      const text = this.copy['hud.chordHeavy']
+      const natural = Math.round(radius * 0.42)
+      const refSize = 100
+      if (this.heavyWidthCache === null || this.heavyWidthCache.text !== text) {
+        ctx.font = `700 ${refSize}px ${this.serif}`
+        this.heavyWidthCache = { text, at: refSize, width: ctx.measureText(text).width }
+      }
+      const size = Math.round(
+        fitLabelFontSize(natural, this.heavyWidthCache.width, refSize, radius * 1.4),
+      )
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.font = `700 ${Math.round(radius * 0.42)}px ${SERIF}`
+      ctx.font = `700 ${size}px ${this.serif}`
       ctx.fillStyle = BLOOD
-      ctx.fillText('重', cx, cy - radius * 1.5)
+      ctx.fillText(text, cx, cy - radius * 1.5)
     }
     ctx.restore()
   }
@@ -1330,10 +1382,10 @@ export class Renderer {
       ctx.stroke()
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.font = '700 22px ' + SERIF
+      ctx.font = '700 22px ' + this.serif
       ctx.fillStyle = style.color
       // 题字抬到判定闪示之上（避免与「完美/良好」叠字），并随笔画上浮
-      ctx.fillText(style.label, lx, judgeY - 122 - p * 30)
+      ctx.fillText(this.copy[style.labelKey], lx, judgeY - 122 - p * 30)
       ctx.globalAlpha = 1
     }
 
@@ -1347,36 +1399,37 @@ export class Renderer {
       const lx = geom.lanes[f.lane]!.cx
       const y = judgeY - 64 - age * 34
       ctx.globalAlpha = 1 - age / FLASH_LIFE
-      ctx.font = `700 25px ${SERIF}`
+      ctx.font = `700 25px ${this.serif}`
       ctx.fillStyle = style.color
-      ctx.fillText(style.label, lx, y)
+      ctx.fillText(this.copy[style.labelKey], lx, y)
       // 偏差小字（ADR-0013）：完美/良好后面跟一句「早 12 / 晚 43」，
       // 落到下一行不挤判定带；Miss 没有按键，没有偏差可言。
       if (f.offset !== undefined && f.judgment !== 'Miss') {
-        ctx.font = `400 12px ${SERIF}`
+        ctx.font = `400 12px ${this.serif}`
         ctx.fillStyle = 'rgba(55,50,42,0.66)'
-        ctx.fillText(offsetLabel(f.offset), lx, y + 18)
+        ctx.fillText(this.offsetLabel(f.offset), lx, y + 18)
       }
       ctx.globalAlpha = 1
     }
 
     // 连击与伤害倍率（认真打 → 倍率抬升可感）
     if (m.combo >= 2) {
-      ctx.font = `700 52px ${SERIF}`
+      ctx.font = `700 52px ${this.serif}`
       ctx.fillStyle = INK
       ctx.fillText(String(m.combo), W / 2, H * 0.16)
-      ctx.font = `400 16px ${SERIF}`
+      ctx.font = `400 16px ${this.serif}`
       ctx.fillStyle = 'rgba(55,50,42,0.55)'
-      ctx.fillText(`连击 · 伤害 ×${m.comboMultiplier}`, W / 2, H * 0.16 + 36)
+      ctx.fillText(this.copy['hud.combo'](String(m.comboMultiplier)), W / 2, H * 0.16 + 36)
     }
 
     // 倒计时（沿用 01）
     if (m.countdownBeats !== null && m.countdownBeats > 0) {
-      const index = Math.min(COUNT_NUMERALS.length - 1, Math.ceil(m.countdownBeats) - 1)
-      const numeral = COUNT_NUMERALS[index]!
+      const numerals = this.copy['countdown.numerals']
+      const index = Math.min(numerals.length - 1, Math.ceil(m.countdownBeats) - 1)
+      const numeral = numerals[index]!
       const beatFraction = m.countdownBeats - Math.floor(m.countdownBeats)
       ctx.globalAlpha = 0.25 + 0.6 * (1 - beatFraction)
-      ctx.font = `700 96px ${SERIF}`
+      ctx.font = `700 96px ${this.serif}`
       ctx.fillStyle = INK
       ctx.fillText(numeral, W / 2, H * 0.42)
       ctx.globalAlpha = 1
@@ -1445,7 +1498,7 @@ export class Renderer {
     }
 
     // 两端读数：左已过、右总长，同一 m:ss 口径（向下取整，末尾不打架）
-    ctx.font = `400 12px ${SERIF}`
+    ctx.font = `400 12px ${this.serif}`
     ctx.textBaseline = 'alphabetic'
     ctx.fillStyle = 'rgba(55,50,42,0.55)'
     ctx.textAlign = 'left'
@@ -1464,13 +1517,13 @@ export class Renderer {
     ctx.textBaseline = 'alphabetic'
     if (cue.kind === 'final') {
       // 「最后一句」用朱砂：与句序号的墨色数字一闪可辨
-      ctx.font = `600 15px ${SERIF}`
+      ctx.font = `600 15px ${this.serif}`
       ctx.fillStyle = BLOOD
-      ctx.fillText('最后一句', W / 2, hud.railCueBaseline)
+      ctx.fillText(this.copy['hud.lastPhrase'], W / 2, hud.railCueBaseline)
     } else {
-      ctx.font = `400 14px ${SERIF}`
+      ctx.font = `400 14px ${this.serif}`
       ctx.fillStyle = 'rgba(55,50,42,0.62)'
-      ctx.fillText(`第 ${cue.index} / ${cue.count} 句`, W / 2, hud.railCueBaseline)
+      ctx.fillText(this.copy['hud.phrase'](cue.index, cue.count), W / 2, hud.railCueBaseline)
     }
     ctx.globalAlpha = 1
   }
@@ -1520,10 +1573,10 @@ export class Renderer {
     // 标签与读数：条上方两端
     const labelY = y - 8
     ctx.textBaseline = 'alphabetic'
-    ctx.font = `400 ${HUD_SMALL}px ${SERIF}`
+    ctx.font = `400 ${HUD_SMALL}px ${this.serif}`
     ctx.textAlign = 'left'
     ctx.fillStyle = low ? BLOOD : 'rgba(160,61,44,0.85)'
-    ctx.fillText('气血', barX, labelY)
+    ctx.fillText(this.copy['hud.vitality'], barX, labelY)
     ctx.textAlign = 'right'
     ctx.fillStyle = low ? BLOOD : 'rgba(55,50,42,0.62)'
     ctx.fillText(
@@ -1602,11 +1655,11 @@ export class Renderer {
       }
 
       // 读数：槽顶正上方，靠屏侧对齐（不压进键位区与下落区）
-      ctx.font = `600 ${HUD_SMALL}px ${SERIF}`
+      ctx.font = `600 ${HUD_SMALL}px ${this.serif}`
       ctx.textBaseline = 'alphabetic'
       ctx.textAlign = side === 'left' ? 'left' : 'right'
       ctx.fillStyle = frac > 0.82 ? 'rgba(63,107,99,1)' : 'rgba(63,107,99,0.9)'
-      ctx.fillText(`琴心 ${hits}/${QINXIN.CHARGE_COMBOS}`, side === 'left' ? x : x + w, slotY - 10)
+      ctx.fillText(this.copy['hud.qinxin'](hits, QINXIN.CHARGE_COMBOS), side === 'left' ? x : x + w, slotY - 10)
     }
   }
 
@@ -1755,26 +1808,26 @@ export class Renderer {
         ctx.globalAlpha = labelEnv
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
+        const label = this.copy[show.labelKey]
         if (s.finale) {
-          // 朱砂印章：终章两字入印，落印时略缩（盖章感）
+          // 朱砂印章：词入印，落印时略缩（盖章感）。印面按实测字宽算——
+          // 中文「终章」两个字号宽，英文 Finale 六个字母宽，印得跟着词长（ADR-0017）
           const stamp = 1 + 0.35 * Math.max(0, 1 - age / 0.14)
-          const pad = size * 0.42
           ctx.save()
           ctx.translate(W / 2, y)
           ctx.scale(stamp, stamp)
+          ctx.font = `700 ${size}px ${this.serif}`
+          const box = finaleSealBox(ctx.measureText(label).width, size)
           ctx.fillStyle = 'rgba(160,61,44,0.92)'
-          const w = size * 2 + pad * 2
-          const h = size * 1.5
-          this.roundRect(-w / 2, -h / 2, w, h, 7)
+          this.roundRect(-box.w / 2, -box.h / 2, box.w, box.h, 7)
           ctx.fill()
           ctx.fillStyle = PAPER
-          ctx.font = `700 ${size}px ${SERIF}`
-          ctx.fillText(show.label, 0, size * 0.04)
+          ctx.fillText(label, 0, size * 0.04)
           ctx.restore()
         } else {
-          ctx.font = `700 ${size}px ${SERIF}`
+          ctx.font = `700 ${size}px ${this.serif}`
           ctx.fillStyle = s.tier === 'grand' ? DEEP_INK : 'rgba(55,50,42,0.8)'
-          ctx.fillText(show.label, W / 2, y)
+          ctx.fillText(label, W / 2, y)
         }
         ctx.globalAlpha = 1
       }

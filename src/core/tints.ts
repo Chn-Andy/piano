@@ -11,12 +11,10 @@ import type { NoteTint } from './chart'
 import { advanceSpeed } from './combat'
 import { BATTLEFIELD, TINT_EFFECTS, TINT_PLAN } from './config'
 
-/** 中文名（GLOSSARY：寒音 / 毒音 / 爆音） */
-export const TINT_LABELS: Record<NoteTint, string> = {
-  cold: '寒音',
-  toxic: '毒音',
-  blast: '爆音',
-}
+/*
+ * 三种词缀的显示名不在这里：已收进文案表的 `tint.cold` / `tint.toxic` /
+ * `tint.blast`（ADR-0017）。纯层只算效果，不持有要显示给人看的字。
+ */
 
 /**
  * 寒音一次的行程后延（秒）：击退半步折算 + 减速折算（推导见 config）。

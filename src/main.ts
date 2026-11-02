@@ -203,6 +203,7 @@ function syncDocument(): void {
 function applyLocale(next: Locale, remember: boolean): void {
   locale = next
   copy = copyFor(locale)
+  renderer.setCopy(copy, locale)
   syncDocument()
   if (remember) {
     settings = { ...settings, locale: next }
@@ -231,6 +232,9 @@ const DIFFICULTY_LABEL_KEY: Readonly<Record<DifficultyName, DifficultyLabelKey>>
 function difficultyLabel(difficulty: DifficultyName): string {
   return copy[DIFFICULTY_LABEL_KEY[difficulty]]
 }
+
+// 画布从现在起用当前语言的文案与字体栈（渲染器每帧读自己那份 copy）
+renderer.setCopy(copy, locale)
 
 
 /* ── 对局上下文 ────────────────────────────────────────────────────── */
