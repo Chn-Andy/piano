@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { REPLAY_LEAD, REPLAY_LABELS, REPLAY_SECONDS, replayActiveAt, replayLabel, replayPlaybackAt, replayPlanFor } from './replay'
+import { keyEcho } from '../i18n/keyEcho'
+import { zh } from '../i18n/zh'
+import { REPLAY_LEAD, REPLAY_SECONDS, replayActiveAt, replayLabel, replayPlaybackAt, replayPlanFor } from './replay'
 import type { PlayedNote } from './replay'
 
 /**
@@ -106,11 +108,10 @@ describe('回放播放状态与复位（A2）', () => {
     expect(replayActiveAt(null, 100), '没在播 → 不亮').toBe(false)
   })
 
-  it('按钮文案随状态走：未播 / 播完读「听我的演奏」，在播读「再听一遍」', () => {
-    expect(replayLabel(false)).toBe('听我的演奏')
-    expect(replayLabel(true)).toBe('再听一遍')
-    expect(REPLAY_LABELS.idle).toBe(replayLabel(false))
-    expect(REPLAY_LABELS.playing).toBe(replayLabel(true))
+  it('按钮文案随状态走：未播读 replay.idle，在播读 replay.playing（文案归表，Seam C）', () => {
+    const copy = keyEcho(zh)
+    expect(replayLabel(false, copy)).toBe('replay.idle')
+    expect(replayLabel(true, copy)).toBe('replay.playing')
   })
 
   it('不足 20 秒的短局按实际窗口结束（不会永远「在播」）', () => {

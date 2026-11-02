@@ -7,6 +7,7 @@
  */
 
 import type { Chart } from './chart'
+import type { Messages } from '../i18n/messages'
 
 /** 进度读数：进度轨与结算画面共用的全部派生量 */
 export interface SongProgress {
@@ -89,11 +90,11 @@ export type OutcomeReason = 'cleared' | 'player-hp-empty' | 'monsters-remain'
  *   已经走完——差一口气也是差；
  * - 歌毕仍有墨妖存活是另一种败局，血未尽，措辞必须分开。
  */
-export function progressLine(progress: SongProgress, reason: OutcomeReason): string {
+export function progressLine(progress: SongProgress, reason: OutcomeReason, copy: Messages): string {
   const percent = Math.round(progress.ratio * 100)
-  if (reason === 'cleared') return '走到 100%'
-  if (reason === 'monsters-remain') return `走到 ${percent}%，墨妖未绝`
-  return `走到 ${Math.min(99, percent)}%，血尽`
+  if (reason === 'cleared') return copy['progress.cleared']
+  if (reason === 'monsters-remain') return copy['progress.monsters'](percent)
+  return copy['progress.fell'](Math.min(99, percent))
 }
 
 /** 句提示的存续时长（秒）：票面「约 2 秒后淡出」 */

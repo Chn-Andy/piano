@@ -27,7 +27,6 @@ import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
 import { masteryFor, masteryFromRecord, masteryLine } from './core/mastery'
 import type { MasteryLevel } from './core/mastery'
 import {
-  REPLAY_LABELS,
   replayActiveAt,
   replayLabel,
   replayPlaybackAt,
@@ -595,7 +594,7 @@ function showPause(): void {
  * 有测试钉着），壳层只负责包一层标签。null = 命中太少，不显示。
  */
 function offsetAdviceLine(summary: BattleSummary): string {
-  const advice = offsetAdvice(summary.avgOffset, summary.perfect + summary.good)
+  const advice = offsetAdvice(summary.avgOffset, summary.perfect + summary.good, copy)
   return advice === null ? '' : `<p class="hint">${advice}</p>`
 }
 
@@ -610,7 +609,7 @@ let replayBus: GainNode | null = null
  */
 let replayPlayback: ReplayPlayback | null = null
 /** 按钮上**已经写着**的文案（逐帧同步时不重复写 DOM） */
-let replayLabelShown: string = REPLAY_LABELS.idle
+let replayLabelShown: string = copy['replay.idle']
 
 function replayButton(): HTMLButtonElement | null {
   return overlay.querySelector<HTMLButtonElement>('#btn-replay')
@@ -625,7 +624,7 @@ function replayButton(): HTMLButtonElement | null {
 function syncReplayState(): void {
   const active = replayActiveAt(replayPlayback, engine.now())
   if (!active) replayPlayback = null
-  const label = replayLabel(active)
+  const label = replayLabel(active, copy)
   if (label !== replayLabelShown) {
     replayLabelShown = label
     const button = replayButton()
@@ -703,7 +702,7 @@ function showSettlement(): void {
   const rating = settlement?.rating ?? 'C'
   const mastery = settlement?.mastery ?? null
   // 走到哪：按终局那一刻的谱面时刻与总长算（纯派生，不进模拟器状态）
-  const reached = progressLine(songProgress(chart, outcomeAt), outcomeReason)
+  const reached = progressLine(songProgress(chart, outcomeAt), outcomeReason, copy)
   // 演奏卡的回放读数：与点下「听我的演奏」时同一份计划（纯函数，重复算无副作用）
   const plan = replayPlanFor(
     playedNotes,
@@ -714,45 +713,56 @@ function showSettlement(): void {
   const best = bestRecordFor(records, song.id, difficulty)
   const recordChip =
     settlement?.improved === true
-      ? '<span class="card-record">新纪录</span>'
+      ? `<span class="card-record">${copy['settlement.newRecord']}</span>`
       : best === undefined
         ? '' // 败局且无旧纪录：没有可比的对象（败局不入册）
-        : `<span class="card-best">本机最佳 ${best.rating} · 连击 ${best.maxCombo}</span>`
+        : `<span class="card-best">${copy['settlement.best'](best.rating, best.maxCombo)}</span>`
   showOverlay(`
     <div class="screen settlement">
-      <h2>${won ? '斗琴告捷' : '斗琴落败'}</h2>
+      <h2>${won ? copy['result.win'] : copy['result.lose']}</h2>
       <p class="reached-line${won ? '' : ' defeat'}">${reached}</p>
       <section class="play-card">
         <div class="card-head">
-          <b class="card-song">${song.title}</b>
+          <b class="card-song">${song.title[locale]}</b>
           <span class="card-diff">${difficultyLabel(difficulty)}</span>
           ${recordChip}
         </div>
         <div class="card-body">
           <div class="card-rating rating-${rating}">${rating}</div>
           <dl class="card-stats">
-            <div><dt>精度</dt><dd>${(accuracyFor(summary) * 100).toFixed(1)}%</dd></div>
-            <div><dt>最长连击</dt><dd>${summary.maxCombo}</dd></div>
-            <div><dt>掌握度</dt><dd>${masteryChip(mastery)}</dd></div>
+            <div><dt>${copy['settlement.accuracy']}</dt><dd>${(accuracyFor(summary) * 100).toFixed(1)}%</dd></div>
+            <div><dt>${copy['settlement.maxCombo']}</dt><dd>${summary.maxCombo}</dd></div>
+            <div><dt>${copy['settlement.mastery']}</dt><dd>${masteryChip(mastery)}</dd></div>
           </dl>
         </div>
-        <p class="card-foot">${masteryLine(mastery)}</p>
+        <p class="card-foot">${masteryLine(mastery, copy)}</p>
         <div class="card-replay">
-          <button id="btn-replay">听我的演奏</button>
-          <span class="replay-note">最后 ${Math.round(plan.duration)} 秒 · 命中 ${plan.hits} 颗 · 漏 ${plan.misses} 颗${plan.finaleAt === null ? '' : ' · 含终章'}</span>
+          <button id="btn-replay">${copy['replay.idle']}</button>
+          <span class="replay-note">${copy['settlement.replayNote']({
+            seconds: Math.round(plan.duration),
+            hits: plan.hits,
+            misses: plan.misses,
+            finale: plan.finaleAt !== null,
+          })}</span>
         </div>
       </section>
-      <p class="stats-line">总伤害 <b>${Math.round(summary.damageDealt)}</b> · 琴心通明 <b>${summary.qinxin}</b> 次 · 完美 <b>${summary.perfect}</b> · 良好 <b>${summary.good}</b> · 失误 <b>${summary.miss}</b></p>
+      <p class="stats-line">${copy['settlement.stats']({
+        damage: Math.round(summary.damageDealt),
+        clarity: summary.qinxin,
+        perfect: summary.perfect,
+        good: summary.good,
+        miss: summary.miss,
+      })}</p>
       ${offsetAdviceLine(summary)}
       <div class="actions">
-        <button id="btn-retry">再来一次（回车）</button>
-        <button id="btn-library" class="secondary">返回曲库（Esc）</button>
+        <button id="btn-retry">${copy['btn.retry']}</button>
+        <button id="btn-library" class="secondary">${copy['btn.backLibrary']}</button>
       </div>
     </div>`,
   )
   debugView.mastery = mastery === null ? null : copy[MASTERY_LABEL_KEY[mastery]]
   replayPlayback = null // 新的一张演奏卡：回放状态从「未播」开始
-  replayLabelShown = REPLAY_LABELS.idle
+  replayLabelShown = copy['replay.idle']
   syncReplayState()
   // 重复点击走 startReplay 的「先停再放」；按钮文案由 syncReplayState 逐帧同步
   overlay.querySelector('#btn-replay')?.addEventListener('click', () => startReplay())

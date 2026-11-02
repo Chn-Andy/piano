@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { keyEcho } from '../i18n/keyEcho'
+import { zh } from '../i18n/zh'
 import { offsetAdvice, ratingFor } from './rating'
 import type { BattleSummary } from './simulator'
 
@@ -66,25 +68,28 @@ describe('评级映射（S/A/B/C）', () => {
  * 可执行的一句话。正向偏移 = 判得更早，所以偏晚就给正数（方向同 judgedTime）。
  */
 describe('平均偏差的结算措辞', () => {
+  /** 回显表：断言「用了哪一句、带什么参数」，措辞改了不必改测试（Seam C） */
+  const copy = keyEcho(zh)
+
   it('命中太少（< 8 颗）不报：平均值没有意义', () => {
-    expect(offsetAdvice(0.05, 7)).toBeNull()
-    expect(offsetAdvice(0.05, 0)).toBeNull()
+    expect(offsetAdvice(0.05, 7, copy)).toBeNull()
+    expect(offsetAdvice(0.05, 0, copy)).toBeNull()
   })
 
   it('平均偏差在门槛内（|ms| < 8）只说节奏稳，不劝人调', () => {
-    expect(offsetAdvice(0.007, 20)).toBe('按键平均偏差 +7ms —— 节奏稳')
-    expect(offsetAdvice(0, 20)).toBe('按键平均偏差 0ms —— 节奏稳')
+    expect(offsetAdvice(0.007, 20, copy)).toBe('advice.steady(+7,7,true)')
+    expect(offsetAdvice(0, 20, copy)).toBe('advice.steady(0,0,false)')
   })
 
   it('偏晚 → 报「偏晚 N ms」并把偏移调正（正值 = 判得更早）', () => {
-    expect(offsetAdvice(0.023, 30)).toBe('按键平均偏晚 23ms —— 可在设置里把音画偏移调到 +23')
+    expect(offsetAdvice(0.023, 30, copy)).toBe('advice.fix(+23,23,true)')
   })
 
   it('偏早 → 报「偏早 N ms」并把偏移调负', () => {
-    expect(offsetAdvice(-0.06, 30)).toBe('按键平均偏早 60ms —— 可在设置里把音画偏移调到 -60')
+    expect(offsetAdvice(-0.06, 30, copy)).toBe('advice.fix(-60,60,false)')
   })
 
   it('恰好 8ms 就算偏（边界含），不落回「节奏稳」', () => {
-    expect(offsetAdvice(0.008, 20)).toBe('按键平均偏晚 8ms —— 可在设置里把音画偏移调到 +8')
+    expect(offsetAdvice(0.008, 20, copy)).toBe('advice.fix(+8,8,true)')
   })
 })

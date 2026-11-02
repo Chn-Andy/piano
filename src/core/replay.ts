@@ -13,6 +13,7 @@
 
 import type { AccompanimentHit } from './accompaniment'
 import type { Lane } from './chart'
+import type { Messages } from '../i18n/messages'
 import type { JudgmentTier } from './simulator'
 
 /** 回放窗口的时长（秒）：票面「本局最后 20 秒」 */
@@ -25,8 +26,10 @@ export const REPLAY_SECONDS = 20
  */
 export const REPLAY_LEAD = 0.12
 
-/** 回放按钮的两个文案（票面：先「听我的演奏」，播过一遍后「再听一遍」） */
-export const REPLAY_LABELS = { idle: '听我的演奏', playing: '再听一遍' } as const
+/*
+ * 回放按钮的两个文案不在这里：它们是玩家可见文案，已收进文案表的
+ * `replay.idle` / `replay.playing`（ADR-0017）。纯层只判「在播 / 没在播」。
+ */
 
 /**
  * 一次回放的播放状态（音频时钟）：壳层只存这一份，逐帧问一句「还在播吗」。
@@ -50,9 +53,9 @@ export function replayActiveAt(playback: ReplayPlayback | null, now: number): bo
   return now < playback.startAt + playback.duration
 }
 
-/** 按钮此刻该写的字：在播「再听一遍」，否则「听我的演奏」 */
-export function replayLabel(active: boolean): string {
-  return active ? REPLAY_LABELS.playing : REPLAY_LABELS.idle
+/** 按钮此刻该写的字：在播「再听一遍」，否则「听我的演奏」（文案由调用方给语言） */
+export function replayLabel(active: boolean, copy: Messages): string {
+  return active ? copy['replay.playing'] : copy['replay.idle']
 }
 
 /**

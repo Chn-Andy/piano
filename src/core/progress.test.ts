@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createChart } from './chart'
 import type { Chart, Phrase } from './chart'
+import { keyEcho } from '../i18n/keyEcho'
+import { zh } from '../i18n/zh'
 import { formatClock, progressCueAt, progressLine, songProgress } from './progress'
 
 /**
@@ -143,29 +145,31 @@ describe('m:ss 读数（轨两端与曲库难度格同一口径）', () => {
 
 describe('结算的「走到 N%」', () => {
   const chart = twoPhraseChart()
+  /** 回显表：断言键名与参数，不锁措辞（Seam C / ADR-0017） */
+  const copy = keyEcho(zh)
 
   it('胜局恒读 100%（终局时刻已越过末尾）', () => {
     const p = songProgress(chart, 32)
 
-    expect(progressLine(p, 'cleared')).toBe('走到 100%')
+    expect(progressLine(p, 'cleared', copy)).toBe('progress.cleared')
   })
 
   it('败局按当时的谱面时刻四舍五入到整数，并说明血尽', () => {
     // 20 / 32 = 62.5% → 63%
-    expect(progressLine(songProgress(chart, 20), 'player-hp-empty')).toBe('走到 63%，血尽')
+    expect(progressLine(songProgress(chart, 20), 'player-hp-empty', copy)).toBe('progress.fell(63)')
   })
 
   it('血尽封顶 99%：差最后一口气倒下，不能读成走完了', () => {
     // 31.9 / 32 = 99.7% → 四舍五入 100%，但血尽不该读作 100%
-    expect(progressLine(songProgress(chart, 31.9), 'player-hp-empty')).toBe('走到 99%，血尽')
+    expect(progressLine(songProgress(chart, 31.9), 'player-hp-empty', copy)).toBe('progress.fell(99)')
   })
 
   it('歌毕仍有墨妖存活：血未尽是另一句，不套用「血尽」', () => {
-    expect(progressLine(songProgress(chart, 40), 'monsters-remain')).toBe('走到 100%，墨妖未绝')
+    expect(progressLine(songProgress(chart, 40), 'monsters-remain', copy)).toBe('progress.monsters(100)')
   })
 
   it('开演前就倒下（倒计时/极点）读 0%', () => {
-    expect(progressLine(songProgress(chart, -1), 'player-hp-empty')).toBe('走到 0%，血尽')
+    expect(progressLine(songProgress(chart, -1), 'player-hp-empty', copy)).toBe('progress.fell(0)')
   })
 })
 

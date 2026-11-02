@@ -13,6 +13,7 @@
 
 import { RATING, SUSTAIN } from './config'
 import type { BattleSummary } from './simulator'
+import type { Messages } from '../i18n/messages'
 
 /** 评级四级（GLOSSARY 顺序 S > A > B > C） */
 export type Rating = 'S' | 'A' | 'B' | 'C'
@@ -43,10 +44,10 @@ export function ratingFor(summary: BattleSummary, outcome: 'victory' | 'defeat')
  * - |平均偏差| < OFFSET_ADVICE_MS → 只说「节奏稳」，不劝人调；
  * - 其余 → 报方向与毫秒，并给出偏移建议值（即平均偏差本身）。
  */
-export function offsetAdvice(avgOffset: number, hits: number): string | null {
+export function offsetAdvice(avgOffset: number, hits: number, copy: Messages): string | null {
   if (hits < RATING.OFFSET_ADVICE_MIN_HITS) return null
   const ms = Math.round(avgOffset * 1000)
-  const signed = `${ms > 0 ? '+' : ''}${ms}`
-  if (Math.abs(ms) < RATING.OFFSET_ADVICE_MS) return `按键平均偏差 ${signed}ms —— 节奏稳`
-  return `按键平均${ms > 0 ? '偏晚' : '偏早'} ${Math.abs(ms)}ms —— 可在设置里把音画偏移调到 ${signed}`
+  const args = { signed: `${ms > 0 ? '+' : ''}${ms}`, magnitude: Math.abs(ms), late: ms > 0 }
+  if (Math.abs(ms) < RATING.OFFSET_ADVICE_MS) return copy['advice.steady'](args)
+  return copy['advice.fix'](args)
 }

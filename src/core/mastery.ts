@@ -11,6 +11,7 @@
 import { MASTERY } from './config'
 import type { BestRecord } from './records'
 import type { Rating } from './rating'
+import type { Messages } from '../i18n/messages'
 
 /**
  * 掌握度三档（顺序即高低，供比较与徽记取色）
@@ -69,9 +70,9 @@ export function masteryFromRecord(record: BestRecord | undefined): MasteryLevel 
  * 结算/曲库那一行说明：只描述这一局发生过什么，不承诺任何专业水准
  * （不写「已掌握此曲」这类强承诺——掌握度不是教学质量）。
  */
-export function masteryLine(level: MasteryLevel | null): string {
-  if (level === 'mastered') return '这一局零失误，精度九成以上'
-  if (level === 'seasoned') return '这一局评级 A 以上'
-  if (level === 'first') return '这一局活着弹完了全曲'
-  return '这一局未入册（败局不计掌握度）'
+export function masteryLine(level: MasteryLevel | null, copy: Messages): string {
+  if (level === 'mastered') return copy['mastery.line.mastered']
+  if (level === 'seasoned') return copy['mastery.line.seasoned']
+  if (level === 'first') return copy['mastery.line.first']
+  return copy['mastery.line.none']
 }
