@@ -1,13 +1,14 @@
 /**
  * 键位映射（ADR-0006）：模拟真实钢琴八度。
  * 一行字母键作白键（A S D F J K L = C4..B4），上一行键嵌于其间作黑键
- * （W E T Y U，对应 C#4 D#4 F#4 G#4 A#4）。v1 布局固定，不做重映射。
+ * （高级/默认 W E T Y U；中等 W E U I O，2026-11-05 用户反馈右手更顺手）。
+ * 布局固定，不做运行时可重映射。
  *
  * 工单 01 只启用白键；黑键常量在此集中预留，中等难度（12 键）直接扩展，
  * 键位映射常量只此一处。
  */
 
-import type { Lane } from './chart'
+import type { DifficultyName, Lane } from './chart'
 
 /** 白键物理键（自左至右），对应一个八度 C4..B4 */
 export const WHITE_KEYS = ['A', 'S', 'D', 'F', 'J', 'K', 'L'] as const
@@ -16,8 +17,15 @@ export const WHITE_KEYS = ['A', 'S', 'D', 'F', 'J', 'K', 'L'] as const
  *  EASY_KEYS 相同——简单难度键区恰为白键八度，两处独立声明、互为印证） */
 export const WHITE_KEY_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'] as const
 
-/** 黑键物理键（嵌于白键之间，位置同真钢琴；后续工单启用） */
+/** 高级/默认黑键物理键（W/E 嵌 A/S/D 之间；T/Y/U 上承 F#4/G#4/A#4） */
 export const BLACK_KEYS = ['W', 'E', 'T', 'Y', 'U'] as const
+
+/**
+ * 中等难度黑键（2026-11-05 用户试玩反馈）：右手黑键从 T Y U 右移到
+ * **U I O**，落在 J K L 的正上方，手腕不必向左探。高级仍用 T Y U +
+ * I O P（C5/C#5/D5），所以同一音名在中等/高级的物理键不同。
+ */
+export const MEDIUM_BLACK_KEYS = ['W', 'E', 'U', 'I', 'O'] as const
 
 /** 物理键 → 键位（白键序号）。未映射键返回 null。大小写不敏感。 */
 export function laneForKey(key: string): Lane | null {
@@ -35,12 +43,20 @@ export function laneForKey(key: string): Lane | null {
  * v1 定标音域 G3..D5；超出即抛错（谱面契约违约）。
  */
 
-/** 钢琴音名 → 物理键（大写）。v1 全量定标表。 */
+/** 钢琴音名 → 物理键（大写）。v1 全量定标表（高级/默认）。 */
 const NOTE_TO_PHYSICAL: Readonly<Record<string, string>> = {
   G3: 'Z', 'G#3': '2', A3: 'X', 'A#3': '3', B3: 'C',
   C4: 'A', 'C#4': 'W', D4: 'S', 'D#4': 'E', E4: 'D',
   F4: 'F', 'F#4': 'T', G4: 'J', 'G#4': 'Y', A4: 'K', 'A#4': 'U', B4: 'L',
   C5: 'I', 'C#5': 'O', D5: 'P',
+}
+
+/** 中等难度覆盖：只改右手黑键 T Y U → U I O，其余与默认表相同。 */
+const MEDIUM_NOTE_TO_PHYSICAL: Readonly<Record<string, string>> = {
+  ...NOTE_TO_PHYSICAL,
+  'F#4': 'U',
+  'G#4': 'I',
+  'A#4': 'O',
 }
 
 /** 一个键位的完整绑定：物理键、音名、是否黑键 */
@@ -61,10 +77,14 @@ export interface KeyLayout {
   byPhysical(key: string): Lane | null
 }
 
-/** 谱面键区（ChartMeta.keys，钢琴序）→ 物理键布局 */
-export function layoutForKeys(notes: readonly string[]): KeyLayout {
+/**
+ * 谱面键区（ChartMeta.keys，钢琴序）→ 物理键布局。
+ * `difficulty === 'medium'` 时用右手黑键 U I O；其余难度用默认表。
+ */
+export function layoutForKeys(notes: readonly string[], difficulty?: DifficultyName): KeyLayout {
+  const table = difficulty === 'medium' ? MEDIUM_NOTE_TO_PHYSICAL : NOTE_TO_PHYSICAL
   const keys = notes.map((note, lane) => {
-    const physical = NOTE_TO_PHYSICAL[note]
+    const physical = table[note]
     if (physical === undefined) {
       throw new Error(`键位布局未定标音名 ${note}（v1 音域 G3..D5，见 keymap.ts）`)
     }

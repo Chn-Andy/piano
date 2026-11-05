@@ -27,6 +27,8 @@ import { finaleSealBox, fitLabelFontSize } from './labelGeometry'
 import type { KeyBinding } from '../core/keymap'
 import type { MonsterView } from '../core/simulator'
 import type { SustainEvent } from '../core/sustain'
+import { DEFAULT_THEME, mixHex, themeRgb } from '../core/theme'
+import type { BattleTheme } from '../core/theme'
 import { hudLayout, keyFieldWidth } from './hudGeometry'
 import type { HudLayout } from './hudGeometry'
 
@@ -201,11 +203,8 @@ const TIER_SHOW = [
 /** 终章（加强版）：在 grand 之上再放大，另配朱砂印章 */
 const FINALE_SHOW = { labelKey: 'sustain.finale', particles: 180, wash: 0.52, arcs: 7, labelSize: 82 } as const
 
-const PAPER = '#efe9dc'
 /** 纸色高光：刃口、音符湿边，与纸面同色 */
 const PAPER_SHEEN = 'rgba(250,247,239,0.58)'
-const INK = '#37322a'
-const DEEP_INK = '#1d1a15'
 const BLOOD = '#a03d2c'
 const COOL_WASH = 'rgba(63,107,99,0.035)'
 /** 中文衬线栈（宋体骨架，水墨调性） */
@@ -220,24 +219,21 @@ const SERIF_EN = '"Iowan Old Style", "Palatino Linotype", Georgia, "Noto Serif S
 /** 三色的墨色（工单 09）：寒音青、毒音苍、爆音朱——都压在水墨色域内，不抢纸面色 */
 const TINT_STYLE: Record<
   NoteTint,
-  { labelKey: 'tint.cold' | 'tint.toxic' | 'tint.blast'; color: string; glow: string; wash: string }
+  { labelKey: 'tint.cold' | 'tint.toxic' | 'tint.blast'; color: string; wash: string }
 > = {
   cold: {
     labelKey: 'tint.cold',
     color: '#3d5f7d',
-    glow: 'rgba(61,95,125,0.22)',
     wash: 'rgba(61,95,125,0.07)',
   },
   toxic: {
     labelKey: 'tint.toxic',
     color: '#4a6b3a',
-    glow: 'rgba(74,107,58,0.22)',
     wash: 'rgba(74,107,58,0.07)',
   },
   blast: {
     labelKey: 'tint.blast',
     color: '#a8402c',
-    glow: 'rgba(168,64,44,0.24)',
     wash: 'rgba(168,64,44,0.08)',
   },
 }
@@ -298,6 +294,32 @@ export class Renderer {
   /** 烘好的纸纹；尺寸或 dpr 变了才重绘，逐帧只贴图 */
   private paperTex: HTMLCanvasElement | null = null
   private paperKey = ''
+  /** 当前战斗主题与插值进度（0=默认水墨，1=主题色） */
+  private theme: BattleTheme = DEFAULT_THEME
+  private themeMix = 0
+
+  /** 装配层每帧设一次：主题为 null 即默认水墨；mix 由倒计时/战斗推进 */
+  setTheme(theme: BattleTheme | null, mix: number): void {
+    this.theme = theme ?? DEFAULT_THEME
+    this.themeMix = Math.max(0, Math.min(1, mix))
+  }
+
+  private get paper(): string {
+    return mixHex(DEFAULT_THEME.paper, this.theme.paper, this.themeMix)
+  }
+
+  private get ink(): string {
+    return mixHex(DEFAULT_THEME.ink, this.theme.ink, this.themeMix)
+  }
+
+  private get deepInk(): string {
+    return mixHex(DEFAULT_THEME.deepInk, this.theme.deepInk, this.themeMix)
+  }
+
+  /** 强调色的 rgba 串（主题淡彩用） */
+  private accentA(alpha: number): string {
+    return `rgba(${themeRgb(this.theme, 'accent', this.themeMix)},${alpha})`
+  }
 
   /**
    * 判定偏差的小字（ADR-0013）：早/晚 + 毫秒。完美带在屏幕上只有 ±17px，
@@ -344,7 +366,7 @@ export class Renderer {
     this.cssH = h
   }
 
-  draw(m: RenderModel, backdrop = false): void {
+  draw(m: RenderModel, backdrop = false, paperOnly = false): void {
     this.resize()
     const { ctx } = this
     const dpr = window.devicePixelRatio || 1
@@ -358,9 +380,14 @@ export class Renderer {
     const zoneY = hud.fallingZone.y // 战场 / 下落区分界
 
     // 纸面：底色 + 一次性烘好的纸纹（纤维、远处淡青、四角收墨）
-    ctx.fillStyle = PAPER
+    ctx.fillStyle = this.paper
     ctx.fillRect(0, 0, W, H)
     this.paintPaper(W, H)
+    this.paintThemeWash(W, H)
+
+    // 菜单/曲库：只要一张纸。战场轨道、判定线与键位标签只在斗琴里出现，
+    // 否则会从半透明菜单背后透出来（v1.6 曲库四行后被用户抓到的 bug）。
+    if (paperOnly) return
 
     const geom = this.laneGeometry(m.layout, W)
 
@@ -402,6 +429,20 @@ export class Renderer {
       Math.sin(age * 68) * origin.amp * decay,
       Math.cos(age * 81) * origin.amp * 0.7 * decay,
     ]
+  }
+
+  /**
+   * 主题淡彩：纸纹烘好后叠一层极淡的强调色（只在主题局；默认主题直接返回）。
+   * 纸纹是尺寸缓存，不能把主题色烘进去——这里逐帧画一层极淡的径向洗。
+   */
+  private paintThemeWash(w: number, h: number): void {
+    if (this.themeMix <= 0) return
+    const { ctx } = this
+    const g = ctx.createRadialGradient(w * 0.82, h * 0.2, 0, w * 0.82, h * 0.2, Math.max(w, h) * 0.62)
+    g.addColorStop(0, this.accentA(0.16 * this.themeMix))
+    g.addColorStop(1, this.accentA(0))
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
   }
 
   /** 键位几何：白键均分整列；黑键窄列嵌在相邻白键边界上（真钢琴） */
@@ -566,13 +607,17 @@ export class Renderer {
         ctx.fillRect(geom.x0 - 8, judgeY - half, geom.fieldW + 16, half * 2)
       }
     }
-    ctx.strokeStyle = `rgba(55,50,42,${0.08 * lineDim})`
-    ctx.lineWidth = 14
-    ctx.beginPath()
-    ctx.moveTo(geom.x0 - 14, judgeY)
-    ctx.lineTo(geom.x0 + geom.fieldW + 14, judgeY)
-    ctx.stroke()
-    this.dryBrush(geom.x0 - 6, geom.x0 + geom.fieldW + 6, judgeY, 0.85 * lineDim * breathe)
+    this.dryBrush(geom.x0 - 6, geom.x0 + geom.fieldW + 6, judgeY, 0.9 * lineDim * breathe, 3.2)
+    // 主题局：判定线下叠一道极淡的粉，让「线在哪」在绿纸上一眼可见
+    if (this.themeMix > 0) {
+      const gateAlpha = gate === null ? 1 : gate.alpha
+      ctx.strokeStyle = this.accentA(0.38 * this.themeMix * gateAlpha)
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(geom.x0 - 14, judgeY + 0.5)
+      ctx.lineTo(geom.x0 + geom.fieldW + 14, judgeY + 0.5)
+      ctx.stroke()
+    }
 
     // 键位标签（底部，兼作键位图示；黑键略小略高，读作嵌行）
     ctx.textAlign = 'center'
@@ -582,7 +627,7 @@ export class Renderer {
       const isHeld = m.held.has(binding.lane)
       const y = judgeY + (binding.isBlack ? 24 : 34)
       ctx.font = `${isHeld ? 700 : 400} ${binding.isBlack ? 13 : 17}px ${this.serif}`
-      ctx.fillStyle = isHeld ? INK : 'rgba(55,50,42,0.62)'
+      ctx.fillStyle = isHeld ? this.ink : 'rgba(55,50,42,0.62)'
       ctx.fillText(binding.key, g.cx, y)
       if (isHeld) {
         ctx.fillStyle = 'rgba(55,50,42,0.62)'
@@ -623,41 +668,21 @@ export class Renderer {
       const drawH = noteH * (1 - 0.16 * near)
       const tintStyle = note.tint === undefined ? null : TINT_STYLE[note.tint]
       ctx.globalAlpha = 1
-      if (dt > 0.02 && dt < VISIBLE_AHEAD) {
-        const trail = Math.min(18, dt * FALL_SPEED * 0.22)
-        const grad = ctx.createLinearGradient(0, y - drawH / 2 - trail, 0, y - drawH / 2)
-        const trailInk = tintStyle?.color ?? (g.black ? DEEP_INK : INK)
-        grad.addColorStop(0, 'rgba(55,50,42,0)')
-        grad.addColorStop(1, trailInk)
-        ctx.globalAlpha = 0.22
-        ctx.fillStyle = grad
-        ctx.fillRect(g.cx - noteW * 0.22, y - drawH / 2 - trail, noteW * 0.44, trail)
-        ctx.globalAlpha = 1
-      }
-      if (tintStyle !== null) {
-        ctx.fillStyle = tintStyle.glow
-        this.roundRect(g.cx - noteW / 2 - 5, y - drawH / 2 - 5, noteW + 10, drawH + 10, 5)
-        ctx.fill()
-      }
       const body = ctx.createLinearGradient(0, y - drawH / 2, 0, y + drawH / 2)
       if (tintStyle !== null) {
         body.addColorStop(0, tintStyle.color)
         body.addColorStop(1, tintStyle.color)
       } else if (g.black) {
-        body.addColorStop(0, '#3f3830')
-        body.addColorStop(1, DEEP_INK)
+        // 平涂墨块：只留极轻的上浅下深，不再做立体投影
+        body.addColorStop(0, '#3a342c')
+        body.addColorStop(1, this.deepInk)
       } else {
-        body.addColorStop(0, '#5c554b')
+        body.addColorStop(0, '#4a443a')
         body.addColorStop(1, '#2a261f')
       }
       ctx.fillStyle = body
       this.roundRect(g.cx - noteW / 2, y - drawH / 2, noteW, drawH, 3)
       ctx.fill()
-      // 音符外沿留一圈湿墨高光，和纸面分开但不制造霓虹感。
-      ctx.strokeStyle = PAPER_SHEEN
-      ctx.lineWidth = 1.5
-      this.roundRect(g.cx - noteW / 2 + 3, y - drawH / 2 + 3, noteW - 6, Math.max(2, drawH - 6), 2)
-      ctx.stroke()
     }
     ctx.globalAlpha = 1
   }
@@ -730,35 +755,24 @@ export class Renderer {
   ): void {
     const { ctx } = this
 
-    // 战场/下落区分界：一道淡墨横笔
-    ctx.strokeStyle = 'rgba(55,50,42,0.06)'
-    ctx.lineWidth = 10
-    ctx.beginPath()
-    ctx.moveTo(0, zoneY)
-    ctx.lineTo(W, zoneY)
-    ctx.stroke()
-
     const lineY = zoneY - LINE_INSET
     const farY = H * FAR_Y_FRAC
     const baseR = Math.min(H * 0.1, W * 0.08, 92)
 
-    // 战场/落音区有轻微冷墨分层，主交界仍由同一支枯笔收住。
-    const boundary = ctx.createLinearGradient(0, zoneY - 13, 0, zoneY + 13)
-    boundary.addColorStop(0, 'rgba(55,50,42,0)')
-    boundary.addColorStop(0.48, 'rgba(55,50,42,0.035)')
-    boundary.addColorStop(1, 'rgba(55,50,42,0)')
-    ctx.fillStyle = boundary
-    ctx.fillRect(0, zoneY - 13, W, 26)
     this.drawBattleAtmosphere(m, W, farY, lineY)
 
-    // 琴阵：淡晕 + 与判定线同一支枯笔，读作同一张纸上的两条横线
-    ctx.strokeStyle = 'rgba(55,50,42,0.08)'
-    ctx.lineWidth = 14
-    ctx.beginPath()
-    ctx.moveTo(geom.x0 - 14, lineY)
-    ctx.lineTo(geom.x0 + geom.fieldW + 14, lineY)
-    ctx.stroke()
-    this.dryBrush(geom.x0 - 5, geom.x0 + geom.fieldW + 5, lineY, 0.52)
+    // 琴阵线：墨妖推进到这里会被琴音挡住并开始咬阵。只留这一条战场线；
+    // 原来的 zoneY 分界线没有玩法含义，已删除，免得看起来像第二条判定线。
+    this.dryBrush(geom.x0 - 5, geom.x0 + geom.fieldW + 5, lineY, 0.62, 3.2)
+    // 给这条线一个名字：它是有玩法的「琴阵」，不是第二条判定线。
+    ctx.save()
+    ctx.globalAlpha = 0.55
+    ctx.fillStyle = this.ink
+    ctx.font = `400 11px ${this.serif}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText(this.copy['hud.frontLine'], geom.x0 + 2, lineY - 7)
+    ctx.restore()
 
     // 纵深 → 屏上位置：近（琴阵）大、远（深处）小；横向散布仅视觉
     const place = (monster: MonsterView, at: number): { x: number; y: number; r: number } => {
@@ -790,7 +804,7 @@ export class Renderer {
       const y = lineY - (lineY - farY) * p
       const fade = (1 - p) ** 1.4
       ctx.globalAlpha = 0.16 * fade * (h.chord ? 1.6 : 1)
-      ctx.strokeStyle = DEEP_INK
+      ctx.strokeStyle = this.deepInk
       ctx.lineWidth = 2.2
       ctx.lineCap = 'round'
       const half = geom.fieldW * (0.22 + 0.36 * p)
@@ -799,7 +813,7 @@ export class Renderer {
       ctx.quadraticCurveTo(W / 2, y - 10 - 8 * (1 - p), W / 2 + half, y + 6)
       ctx.stroke()
       ctx.globalAlpha = 0.1 * fade * (h.chord ? 1.5 : 1)
-      ctx.fillStyle = DEEP_INK
+      ctx.fillStyle = this.deepInk
       ctx.beginPath()
       ctx.ellipse(W / 2, y, half * 0.72, 7 + 10 * (1 - p), 0, 0, Math.PI * 2)
       ctx.fill()
@@ -924,7 +938,7 @@ export class Renderer {
         ctx.ellipse(pos.x, pos.y, pos.r * (0.8 + p * 4), pos.r * (0.8 + p * 4) * 0.72, 0, 0, Math.PI * 2)
         ctx.stroke()
         ctx.globalAlpha = Math.max(0, 1 - age / 0.1) * 0.5
-        ctx.fillStyle = PAPER
+        ctx.fillStyle = this.paper
         ctx.fillRect(0, 0, W, H)
         ctx.globalAlpha = 1
       }
@@ -959,7 +973,7 @@ export class Renderer {
   ): void {
     const { ctx } = this
     const seed = monster.id * 13 + (lord ? 97 : 0)
-    const ink = lord ? '#14110d' : INK
+    const ink = lord ? '#14110d' : this.ink
     const h = r * (lord ? 1.24 : 1.0)
     const w = r * (lord ? 0.5 : 0.46)
 
@@ -1118,7 +1132,7 @@ export class Renderer {
     ctx.rotate(sway * 0.6 - 0.04)
     const bandW = w * 0.3
     const bandH = h * 0.065
-    ctx.fillStyle = PAPER
+    ctx.fillStyle = this.paper
     ctx.beginPath()
     ctx.moveTo(-bandW, -bandH)
     ctx.quadraticCurveTo(0, -bandH * 1.35, bandW, -bandH * 1.05)
@@ -1158,6 +1172,256 @@ export class Renderer {
     ctx.globalAlpha = alpha
     ctx.restore()
   }
+  /**
+   * 主题曲的可爱动物形貌（v1.6，ADR-0019）：材质仍是墨，形是圆身短腿、
+   * 纸白大眼、粉腮红/头巾的山贼动物。复用 drawGhoul 的动画包络
+   * （步态/起伏/蓄力/挥砍），行为、HP、定标一概不动。
+   */
+  private drawAnimal(
+    monster: MonsterView,
+    cx: number,
+    cy: number,
+    r: number,
+    t: number,
+    lord: boolean,
+    alpha: number,
+    aggro: number,
+    anim: MonsterAnim,
+  ): void {
+    const { ctx } = this
+    const accent = mixHex(DEFAULT_THEME.accent, this.theme.accent, this.themeMix)
+    const gold = mixHex(DEFAULT_THEME.gold, this.theme.gold, this.themeMix)
+    const ink = this.ink
+    const deep = this.deepInk
+    const paper = this.paper
+    const species = lord ? 'boar' : (['boar', 'fox', 'wolf'] as const)[monster.id % 3]!
+    const h = r * (lord ? 1.24 : 1.15)
+    const swing = Math.sin(anim.step * Math.PI * 2) * anim.moving
+    const bob = -Math.abs(swing) * 0.04 * h - 0.008 * h * Math.sin(t * 1.9 + monster.id * 1.7)
+    const lean = (hash2(monster.id * 13, 3) - 0.5) * 0.06 + anim.moving * 0.04 - aggro * 0.04
+    const windup = anim.windup
+    const lunge = anim.slash * 0.16 * h
+
+    ctx.globalAlpha = alpha
+    const haze = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.4)
+    const hazeRgb = themeRgb(this.theme, 'ink', this.themeMix)
+    haze.addColorStop(0, `rgba(${hazeRgb},0.10)`)
+    haze.addColorStop(0.65, `rgba(${hazeRgb},0.04)`)
+    haze.addColorStop(1, `rgba(${hazeRgb},0)`)
+    ctx.fillStyle = haze
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, r * 1.4, h * 1.25, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.save()
+    ctx.translate(cx + lunge, cy + bob)
+    ctx.rotate(lean * 0.5 - windup * 0.06)
+    ctx.lineCap = 'round'
+
+    // 腿：推进时交替迈步
+    ctx.fillStyle = deep
+    for (const side of [-1, 1]) {
+      const lift = side > 0 ? 0.08 * h * swing : -0.08 * h * swing
+      ctx.beginPath()
+      this.roundRect(side * 0.5 * h - 0.11 * h, 0.5 * h - lift, 0.22 * h, 0.42 * h, 0.1 * h)
+      ctx.fill()
+    }
+
+    // 尾巴：猪卷尾 / 狐大尾 / 狼垂尾
+    if (species === 'boar') {
+      ctx.strokeStyle = ink
+      ctx.lineWidth = 0.08 * h
+      ctx.beginPath()
+      ctx.arc(-1.02 * h, -0.05 * h, 0.18 * h, 0.2 * Math.PI, 1.9 * Math.PI)
+      ctx.stroke()
+    } else if (species === 'fox') {
+      ctx.fillStyle = ink
+      ctx.beginPath()
+      ctx.moveTo(-0.8 * h, 0.1 * h)
+      ctx.bezierCurveTo(-2.0 * h, -0.25 * h, -1.95 * h, -1.1 * h, -1.0 * h, -0.6 * h)
+      ctx.bezierCurveTo(-1.35 * h, -0.4 * h, -1.1 * h, -0.1 * h, -0.8 * h, 0.1 * h)
+      ctx.fill()
+      ctx.fillStyle = accent
+      ctx.globalAlpha = alpha * 0.75
+      ctx.beginPath()
+      ctx.ellipse(-1.7 * h, -0.75 * h, 0.3 * h, 0.2 * h, -0.6, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+    } else {
+      ctx.fillStyle = deep
+      ctx.beginPath()
+      ctx.moveTo(-0.85 * h, 0.15 * h)
+      ctx.bezierCurveTo(-1.6 * h, 0.25 * h, -1.6 * h, -0.5 * h, -1.0 * h, -0.4 * h)
+      ctx.bezierCurveTo(-1.2 * h, -0.2 * h, -1.05 * h, -0.05 * h, -0.85 * h, 0.15 * h)
+      ctx.fill()
+    }
+
+    // 身体
+    ctx.fillStyle = ink
+    ctx.beginPath()
+    ctx.ellipse(0, 0.05 * h, 1.05 * h, 0.72 * h, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 野猪背脊鬃毛
+    if (species === 'boar') {
+      for (let i = 0; i < 4; i += 1) {
+        const bx = -0.85 * h + i * 0.34 * h
+        ctx.beginPath()
+        ctx.moveTo(bx, -0.28 * h)
+        ctx.lineTo(bx + 0.14 * h, -0.55 * h)
+        ctx.lineTo(bx + 0.26 * h, -0.24 * h)
+        ctx.closePath()
+        ctx.fill()
+      }
+    }
+
+    // 胸口纸白（狐狸/狼）
+    if (species !== 'boar') {
+      ctx.fillStyle = paper
+      ctx.globalAlpha = alpha * 0.78
+      ctx.beginPath()
+      ctx.ellipse(0.42 * h, 0.3 * h, 0.28 * h, 0.2 * h, -0.2, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+    }
+
+    // 头（蓄力时低头）
+    const hx = 0.78 * h
+    const hy = -0.3 * h + windup * 0.08 * h
+    const hr = 0.58 * h
+    ctx.fillStyle = ink
+    ctx.beginPath()
+    ctx.arc(hx, hy, hr, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 耳朵
+    ctx.fillStyle = ink
+    if (species === 'boar') {
+      for (const side of [-1, 1]) {
+        ctx.beginPath()
+        ctx.moveTo(hx + side * 0.28 * h, hy - 0.48 * h)
+        ctx.lineTo(hx + side * 0.52 * h, hy - 0.82 * h)
+        ctx.lineTo(hx + side * 0.58 * h, hy - 0.34 * h)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = paper
+        ctx.globalAlpha = alpha * 0.4
+        ctx.beginPath()
+        ctx.moveTo(hx + side * 0.34 * h, hy - 0.5 * h)
+        ctx.lineTo(hx + side * 0.47 * h, hy - 0.7 * h)
+        ctx.lineTo(hx + side * 0.5 * h, hy - 0.43 * h)
+        ctx.closePath()
+        ctx.fill()
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = ink
+      }
+    } else {
+      for (const side of [-1, 1]) {
+        ctx.beginPath()
+        ctx.moveTo(hx + side * 0.18 * h, hy - 0.48 * h)
+        ctx.lineTo(hx + side * 0.4 * h, hy - 0.95 * h)
+        ctx.lineTo(hx + side * 0.54 * h, hy - 0.32 * h)
+        ctx.closePath()
+        ctx.fill()
+      }
+    }
+
+    // 口鼻 + 獠牙
+    if (species === 'boar') {
+      // 纸色猪鼻 + 墨描边 + 深鼻孔：小尺寸下也能一眼认出是猪
+      ctx.fillStyle = paper
+      ctx.beginPath()
+      ctx.ellipse(hx + 0.46 * h, hy + 0.08 * h, 0.28 * h, 0.2 * h, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = ink
+      ctx.lineWidth = Math.max(1.2, 0.025 * h)
+      ctx.stroke()
+      ctx.fillStyle = deep
+      for (const side of [-1, 1]) {
+        ctx.beginPath()
+        ctx.ellipse(hx + 0.46 * h + side * 0.09 * h, hy + 0.08 * h, 0.04 * h, 0.055 * h, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      // 獠牙：嘴角两侧各一颗向上的纸色尖，和纸鼻分开
+      ctx.fillStyle = paper
+      for (const tx of [hx + 0.2 * h, hx + 0.72 * h]) {
+        ctx.beginPath()
+        ctx.moveTo(tx - 0.05 * h, hy + 0.3 * h)
+        ctx.lineTo(tx, hy + 0.07 * h)
+        ctx.lineTo(tx + 0.05 * h, hy + 0.3 * h)
+        ctx.closePath()
+        ctx.fill()
+      }
+    } else {
+      ctx.beginPath()
+      ctx.moveTo(hx + 0.3 * h, hy + 0.02 * h)
+      ctx.lineTo(hx + (species === 'fox' ? 0.88 : 0.78) * h, hy + 0.18 * h)
+      ctx.lineTo(hx + 0.3 * h, hy + 0.3 * h)
+      ctx.closePath()
+      ctx.fill()
+      // 纸色鼻尖：小尺寸下把「长吻」从黑团里拉出来
+      ctx.fillStyle = paper
+      ctx.globalAlpha = alpha * 0.85
+      const tipX = hx + (species === 'fox' ? 0.88 : 0.78) * h
+      ctx.beginPath()
+      ctx.arc(tipX, hy + 0.18 * h, 0.055 * h, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+      ctx.fillStyle = ink
+    }
+
+    // 眼睛、腮红、笑
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = paper
+      ctx.beginPath()
+      ctx.arc(hx + side * 0.2 * h, hy - 0.06 * h, 0.105 * h, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = deep
+      ctx.beginPath()
+      ctx.arc(hx + side * 0.2 * h, hy - 0.04 * h, 0.055 * h, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = accent
+      ctx.globalAlpha = alpha * 0.5
+      ctx.beginPath()
+      ctx.ellipse(hx + side * 0.44 * h, hy + 0.12 * h, 0.075 * h, 0.055 * h, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+    }
+    ctx.strokeStyle = paper
+    ctx.globalAlpha = alpha * 0.9
+    ctx.lineWidth = Math.max(1.2, 0.035 * h)
+    ctx.beginPath()
+    ctx.arc(hx + 0.04 * h, hy + 0.2 * h, 0.16 * h, 0.15 * Math.PI, 0.85 * Math.PI)
+    ctx.stroke()
+    ctx.globalAlpha = alpha
+
+    // 墨主：刀疤 + 玫瑰
+    if (lord) {
+      ctx.strokeStyle = paper
+      ctx.lineWidth = Math.max(1.6, 0.05 * h)
+      ctx.beginPath()
+      ctx.moveTo(hx - 0.3 * h, hy - 0.4 * h)
+      ctx.lineTo(hx - 0.12 * h, hy + 0.12 * h)
+      ctx.stroke()
+      const rx = -0.05 * h
+      const ry = 0.28 * h
+      ctx.fillStyle = accent
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2
+        ctx.beginPath()
+        ctx.ellipse(rx + Math.cos(a) * 0.14 * h, ry + Math.sin(a) * 0.14 * h, 0.11 * h, 0.08 * h, a, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.fillStyle = gold
+      ctx.beginPath()
+      ctx.arc(rx, ry, 0.07 * h, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.restore()
+    ctx.globalAlpha = alpha
+  }
+
   /** 程序绘制墨色剪影（帧间确定性轮廓 + 极慢呼吸；tAnim 供顿帧冻结呼吸） */
   private drawMonster(
     m: RenderModel,
@@ -1223,12 +1487,17 @@ export class Renderer {
       const age = m.t - bite.at
       if (age >= 0 && age <= 0.24) slash = Math.max(slash, 1 - age / 0.24)
     }
-    this.drawGhoul(monster, cx, cy, r, t, lord, alpha, 1 - depthRatio, {
+    const anim: MonsterAnim = {
       moving,
       step,
       windup: untilBite > 0.42 ? 0 : windup,
       slash,
-    })
+    }
+    if (this.theme.monsterSkin === 'animal') {
+      this.drawAnimal(monster, cx, cy, r, t, lord, alpha, 1 - depthRatio, anim)
+    } else {
+      this.drawGhoul(monster, cx, cy, r, t, lord, alpha, 1 - depthRatio, anim)
+    }
 
     // 寒音减速：青霜环（减速持续期内可见，余光读作「冻住了」）
     if (monster.slowedUntil !== null && m.t < monster.slowedUntil) {
@@ -1264,7 +1533,7 @@ export class Renderer {
     // 受击纸色闪罩
     if (flash > 0) {
       ctx.globalAlpha = alpha * flash * 0.55
-      ctx.fillStyle = PAPER
+      ctx.fillStyle = this.paper
       ctx.beginPath()
       ctx.ellipse(cx, cy, r * 1.02, r * 0.9, 0, 0, Math.PI * 2)
       ctx.fill()
@@ -1283,7 +1552,7 @@ export class Renderer {
     this.roundRect(cx - barW / 2, barY, barW, barH, 6)
     ctx.fill()
     const frac = Math.max(0, monster.hp / monster.maxHp)
-    ctx.fillStyle = lord ? BLOOD : INK
+    ctx.fillStyle = lord ? BLOOD : this.ink
     if (frac > 0) {
       this.roundRect(cx - barW / 2, barY, barW * frac, barH, 6)
       ctx.fill()
@@ -1415,7 +1684,7 @@ export class Renderer {
     // 连击与伤害倍率（认真打 → 倍率抬升可感）
     if (m.combo >= 2) {
       ctx.font = `700 52px ${this.serif}`
-      ctx.fillStyle = INK
+      ctx.fillStyle = this.ink
       ctx.fillText(String(m.combo), W / 2, H * 0.16)
       ctx.font = `400 16px ${this.serif}`
       ctx.fillStyle = 'rgba(55,50,42,0.55)'
@@ -1430,7 +1699,7 @@ export class Renderer {
       const beatFraction = m.countdownBeats - Math.floor(m.countdownBeats)
       ctx.globalAlpha = 0.25 + 0.6 * (1 - beatFraction)
       ctx.font = `700 96px ${this.serif}`
-      ctx.fillStyle = INK
+      ctx.fillStyle = this.ink
       ctx.fillText(numeral, W / 2, H * 0.42)
       ctx.globalAlpha = 1
     }
@@ -1466,7 +1735,7 @@ export class Renderer {
     // 已过：墨色填到比例处（不足轨厚的部分按轨厚画，圆角才不会断头）
     const doneW = rail.w * progress.ratio
     if (doneW > 0) {
-      ctx.fillStyle = 'rgba(55,50,42,0.5)'
+      ctx.fillStyle = this.themeMix > 0 ? this.accentA(0.55) : 'rgba(55,50,42,0.5)'
       this.roundRect(rail.x, rail.y, Math.max(rail.h, doneW), rail.h, rail.h / 2)
       ctx.fill()
     }
@@ -1667,22 +1936,19 @@ export class Renderer {
    * 横贯一段的枯笔：三段错落的细线叠成飞白，两端虚、中段实。
    * alpha 是整笔的浓淡（判定线浓、琴阵淡）。
    */
-  private dryBrush(x0: number, x1: number, y: number, alpha: number): void {
+  private dryBrush(x0: number, x1: number, y: number, alpha: number, weight = 2.4): void {
     const { ctx } = this
     const span = Math.max(1, x1 - x0)
     ctx.lineCap = 'round'
-    for (let pass = 0; pass < 3; pass += 1) {
-      const inset = span * (0.02 + pass * 0.012)
-      const dy = (pass - 1) * 1.15
-      const weight = pass === 1 ? 2.4 : 1.1
-      ctx.globalAlpha = alpha * (pass === 1 ? 0.85 : 0.38)
-      ctx.strokeStyle = pass === 1 ? DEEP_INK : INK
-      ctx.lineWidth = weight
-      ctx.beginPath()
-      ctx.moveTo(x0 + inset, y + dy)
-      ctx.quadraticCurveTo((x0 + x1) / 2, y + dy * 0.2 + (pass === 0 ? -0.6 : 0.4), x1 - inset, y - dy * 0.35)
-      ctx.stroke()
-    }
+    // 单笔：不留三道平行虚线/底影，线就是线
+    const inset = span * 0.03
+    ctx.globalAlpha = alpha
+    ctx.strokeStyle = this.deepInk
+    ctx.lineWidth = weight
+    ctx.beginPath()
+    ctx.moveTo(x0 + inset, y)
+    ctx.quadraticCurveTo((x0 + x1) / 2, y - 0.6, x1 - inset, y)
+    ctx.stroke()
     ctx.globalAlpha = 1
   }
 
@@ -1738,7 +2004,7 @@ export class Renderer {
         const env = rise < 1 ? rise * rise : Math.max(0, 1 - (age - life * 0.26) / (life * 0.08))
         const topY = judgeY - (judgeY - cy) * rise
         ctx.globalAlpha = 0.75 * env
-        ctx.fillStyle = DEEP_INK
+        ctx.fillStyle = this.deepInk
         const wHalf = 10 + show.arcs * 5
         ctx.beginPath()
         ctx.moveTo(W / 2 - wHalf, judgeY)
@@ -1761,7 +2027,7 @@ export class Renderer {
           [0.38, 0.66, s.phraseId * 13 + 3],
         ] as const) {
           ctx.globalAlpha = washFade * alphaMul * (s.finale ? 1.25 : 1)
-          ctx.fillStyle = s.finale ? '#14110d' : INK
+          ctx.fillStyle = s.finale ? '#14110d' : this.ink
           this.inkBlob(W / 2, cy, washR * mul * washGrow, seed, 0.82)
           ctx.fill()
         }
@@ -1778,7 +2044,7 @@ export class Renderer {
           const grow = r0 + washR * 1.35 * burstP
           const env = Math.sin(Math.PI * Math.min(1, burstP / 0.85))
           ctx.globalAlpha = 0.5 * env
-          ctx.strokeStyle = DEEP_INK
+          ctx.strokeStyle = this.deepInk
           ctx.lineWidth = 3 + 7 * (1 - burstP) * (s.finale ? 1.4 : 1)
           ctx.lineCap = 'round'
           ctx.beginPath()
@@ -1821,12 +2087,12 @@ export class Renderer {
           ctx.fillStyle = 'rgba(160,61,44,0.92)'
           this.roundRect(-box.w / 2, -box.h / 2, box.w, box.h, 7)
           ctx.fill()
-          ctx.fillStyle = PAPER
+          ctx.fillStyle = this.paper
           ctx.fillText(label, 0, size * 0.04)
           ctx.restore()
         } else {
           ctx.font = `700 ${size}px ${this.serif}`
-          ctx.fillStyle = s.tier === 'grand' ? DEEP_INK : 'rgba(55,50,42,0.8)'
+          ctx.fillStyle = s.tier === 'grand' ? this.deepInk : 'rgba(55,50,42,0.8)'
           ctx.fillText(label, W / 2, y)
         }
         ctx.globalAlpha = 1
@@ -1837,7 +2103,7 @@ export class Renderer {
         const flash = Math.max(0, 1 - age / 0.1)
         if (flash > 0) {
           ctx.globalAlpha = flash * 0.4
-          ctx.fillStyle = PAPER
+          ctx.fillStyle = this.paper
           ctx.fillRect(0, 0, W, H)
           ctx.globalAlpha = 1
         }
@@ -1876,7 +2142,7 @@ export class Renderer {
     const { ctx } = this
     const age = t - t0
     if (age < 0 || age > life) return
-    ctx.fillStyle = DEEP_INK
+    ctx.fillStyle = this.deepInk
     for (let i = 0; i < count; i += 1) {
       const angle = hash2(seed, i) * Math.PI * 2
       const v0 = speed * (0.3 + 0.7 * hash2(seed + 1, i))
@@ -1894,7 +2160,7 @@ export class Renderer {
       const tx = ox + Math.cos(angle) * tailTravel
       const ty = oy + Math.sin(angle) * tailTravel * 0.8 + tailFall
       ctx.globalAlpha = fade * 0.85
-      ctx.strokeStyle = DEEP_INK
+      ctx.strokeStyle = this.deepInk
       ctx.lineWidth = 1 + 2.6 * hash2(seed + 3, i) * fade
       ctx.lineCap = 'round'
       ctx.beginPath()

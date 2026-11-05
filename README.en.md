@@ -6,7 +6,7 @@ Water-ink wuxia meets keyboard rhythm combat: notes fall with the music, your no
 
 v1.1: fiends advance on your line in packs, tinted notes (Frost / Venom / Blast), and the combo-charged Heartstring burst.
 v1.4 "performance fantasy": a progress rail along the top edge, a continuously playing accompaniment part (the melody is always yours), mastery badges and a "Hear my playing" replay (the last 20 seconds, only on the results screen).
-Three public-domain pieces (Canon in D / Für Elise / Moonlight on the Spring River) × three difficulties. One static build ships to both GitHub Pages and itch.io ([ADR-0009](docs/adr/0009-技术底座与发布.md), in Chinese).
+Three public-domain pieces (Canon in D / Für Elise / Moonlight on the Spring River) plus one theme song, *Pig Hero's Journey* × three difficulties. The theme song's medium/hard modes play the original full track (new mix: vocals +2.8 dB, piano −2.9 dB) with a green-and-pink battle palette and cute ink animals; easy stays piano-only ([ADR-0019](docs/adr/0019-主题曲全轨与主题皮肤.md), in Chinese). One static build ships to both GitHub Pages and itch.io ([ADR-0009](docs/adr/0009-技术底座与发布.md), in Chinese).
 
 v1.5 "bilingual UI": the whole interface exists in Chinese and English ([ADR-0017](docs/adr/0017-双语UI与全英文模式.md), in Chinese). It follows your browser language (`zh*` → Chinese, everything else → English), remembers your choice, and can be switched any time from the library badge or the settings screen. English mode is **fully English** — title, seal and countdown included.
 
@@ -18,13 +18,13 @@ npm run dev        # dev server; click or press any key to start (browsers need 
 npm test           # core simulator + chart contract + converter tests (vitest, node env)
 npm run build      # type check + static build into dist/ (relative base, any static host works)
 npm run preview    # preview the build
-npm run charts     # regenerate the three difficulties from the public-domain MIDI fixtures
+npm run charts     # regenerate every song's three difficulties from the MIDI fixtures
 npm run pack:itch  # build + package for itch.io HTML5 upload → xinqin-itch.zip
 ```
 
 ## How it plays
 
-White keys `A S D F J K L` cover one octave C4–B4, black keys `W E T Y U` sit between them; Hard difficulty widens the range to `I O P` above and `Z X C` below. Press when a note crosses the judgement line: Perfect ±50 ms / Good ±120 ms, and a miss breaks the combo. Long presses do not double-trigger; `Esc` pauses.
+White keys `A S D F J K L` cover one octave C4–B4; Medium adds black keys `W E U I O` (the right-hand black keys sit above `J K L`), while Hard keeps `W E T Y U` and widens the range to `I O P` above and `Z X C` below. Press when a note crosses the judgement line: Perfect ±50 ms / Good ±120 ms, and a miss breaks the combo. Long presses do not double-trigger; `Esc` pauses.
 
 Judgement compares exactly one number — |press time − note time| — and zero is the instant the note's centre crosses the line. Two faint ink halos on the line show how wide the two tiers really are (±17 px and ±41 px, both thinner than a single note), which is why every judgement also prints a small "late 43 / early 12" and the results screen reports your average offset: if you are consistently late, move the audio offset in the settings.
 
@@ -50,4 +50,5 @@ One static build, two hosts. GitHub Pages: push `main`, the workflow runs tests 
 
 - Piano samples: **Salamander Grand Piano V3**, recorded by Alexander Holm (Yamaha C5), **CC-BY 3.0** — <https://creativecommons.org/licenses/by/3.0/> · original release <https://archive.org/details/SalamanderGrandPianoV3>. Only five minor-third pitches are sampled (C4/Ds4/Fs4/A4/C5); the remaining white keys are resampled from the nearest sample via `playbackRate`.
 - Charts are generated from public-domain MIDI: Pachelbel's Canon in D and Beethoven's Für Elise (Mutopia Project, Public Domain), and the traditional 春江花月夜 (Music.Traditional.Chinese.MIDI, CC BY 4.0).
+- *Pig Hero's Journey* is an AI-generated song credited to 心心念念; its MIDI is an automatic transcription of the video audio (not an official score) and its full track ships as `assets/songs/zhuxia-manyouji.mp3`.
 - Everything else — code, chart generator, ink-wash renderer — is original.

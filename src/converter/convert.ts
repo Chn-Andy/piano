@@ -11,6 +11,7 @@ import { TINT_PLAN } from '../core/config'
 import { pitchClassOf, pitchClassOfMidi } from '../core/pitch'
 import { pickTint } from '../core/tints'
 import type { SourceKey, SourceSong } from './midiSource'
+import { ACCOMPANIMENT_TRACK_NAME } from './midiSource'
 import {
   CHORD_SOURCE_WINDOW,
   DIFFICULTY_RULES,
@@ -91,6 +92,17 @@ export function convertChart(
   if (source.notes.length === 0) {
     throw new Error('源曲无音符，无法转换谱面')
   }
+  // 「只作伴奏材料」的轨（MIDI 轨名 = accompaniment）不进玩家谱面：
+  // 玩家弹旋律，和声交给伴奏声部（ADR-0018；现有三首无此轨名，行为不变）。
+  const accompanimentOnly = new Set(
+    (source.tracks ?? [])
+      .filter((track) => track.name.trim().toLowerCase() === ACCOMPANIMENT_TRACK_NAME)
+      .map((track) => track.index),
+  )
+  const chartNotes = source.notes.filter((note) => !accompanimentOnly.has(note.track ?? 0))
+  if (chartNotes.length === 0) {
+    throw new Error('源曲只有伴奏材料，玩家谱面无音符')
+  }
   const rule = DIFFICULTY_RULES[difficulty]
   const beat = 60 / source.bpm
   const grid = rule.gridBeats * beat
@@ -103,7 +115,7 @@ export function convertChart(
   // 与 minGap 的比较精确成立）；毫秒圆整只在装配谱面前做一次——先圆整会让
   // 网格位置在相邻毫秒间交替（如 0.208/0.209），两格间距骑在密度阈值两侧，
   // 贪心过滤在"隔一保留"与"隔二保留"间抖动（致爱丽丝高级实测退化 0.417→0.625）。
-  const mapped: MappedNote[] = source.notes
+  const mapped: MappedNote[] = chartNotes
     .map((note) => {
       const pitch = note.midi + transpose
       return {

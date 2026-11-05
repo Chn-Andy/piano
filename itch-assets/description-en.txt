@@ -4,7 +4,7 @@ Notes fall with the music and you play them on letter keys laid out like a real 
 
 How it plays
 
-· Three public-domain pieces × three difficulties: Canon in D / Für Elise / Moonlight on the Spring River. Easy starts at 7 white keys, Medium adds black keys (12), Hard widens to a two-row 20-key hand position.
+· Three public-domain pieces + one original theme × three difficulties: Canon in D / Für Elise / Moonlight on the Spring River, plus Pig Hero's Journey — Medium/Hard carry the original full track with a pale-green/pink theme and cute bandit animals; Easy stays piano-only. Easy starts at 7 white keys, Medium adds black keys (12), Hard widens to a two-row 20-key hand position.
 · Judgement: press as the note crosses the judgement line. Perfect ±50 ms / Good ±120 ms; a miss breaks the combo (no health loss — damage comes only from fiends biting at your line).
 · Hold the line: fiends advance from deep in the field to your line, then bite for 10 HP every two beats. Sword-qi is a full-field AoE that decays with depth — every hit strikes everything, front rank takes it all, the back rank less. Lose all health and you lose; survive to the end of the song with the field cleared (Ink Sovereign included) and you win.
 · Tinted notes (about 6%): Frost (knocks the field back and slows it), Venom (poisons the front fiend), Blast (heavy hit on the front two) — placed deterministically in the chart, so the same song always lays out the same way.
@@ -16,8 +16,8 @@ How it plays
 Keys
 
 · White keys: A S D F J K L (one octave, C4–B4)
-· Black keys: W E T Y U (between the white keys, like a real piano)
-· Hard widens the range: I O P upwards, Z X C downwards
+· Medium black keys: W E U I O (the right-hand black keys sit above J K L)
+· Hard black keys: W E T Y U; the range widens to I O P upwards and Z X C downwards
 · Esc pauses / goes back; ↑↓ picks a song, ←→ picks a difficulty, Enter starts the duel
 
 Desktop keyboard only (no touch support).
@@ -27,8 +27,9 @@ Language: the interface is available in 中文 and English — it follows your b
 Credits
 
 · Piano samples: Salamander Grand Piano V3, recorded by Alexander Holm (Yamaha C5), licensed CC-BY 3.0 — https://creativecommons.org/licenses/by/3.0/ · original release https://archive.org/details/SalamanderGrandPianoV3 · this build uses mp3 conversions of the v8 velocity layers (hosted by Yotam Mann).
-· Music (all public-domain scores):
+· Music (the first three are public-domain scores):
   · Pachelbel, Canon in D — MIDI from the Mutopia Project (Public Domain)
   · Beethoven, Für Elise WoO 59 — MIDI from the Mutopia Project (Public Domain)
   · Traditional, Moonlight on the Spring River (春江花月夜) — MIDI from Music.Traditional.Chinese.MIDI (CC BY 4.0)
+  · Pig Hero's Journey (猪侠漫游记) — an original song provided by the author, credited as 心心念念; its audio and auto-transcribed chart are used with permission and are **not** public domain.
 · Everything else (code, chart generator, ink-wash renderer) is original work.

@@ -46,11 +46,18 @@ export class Piano {
   private readonly buffers = new Map<string, AudioBuffer>()
   /** 在途/已成的加载承诺（幂等加载，工单 07） */
   private loadPromise: Promise<void> | null = null
+  /** 整架琴的附加音量：全轨局把它压到 0.72，让原曲人声/伴奏浮上来 */
+  private volume = 1
 
   constructor(
     private readonly ctx: () => AudioContext,
     private readonly destination: () => AudioNode,
   ) {}
+
+  /** 整架琴的附加音量（1 = 原样）。只影响之后弹的音；已发声的采样不追改。 */
+  setVolume(volume: number): void {
+    this.volume = Math.max(0, Math.min(1, volume))
+  }
 
   /**
    * 预取并解码全部原生采样（5 个文件，约 0.9MB）。幂等（工单 07 审计）：
@@ -113,12 +120,13 @@ export class Piano {
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.playbackRate.value = 2 ** ((semitones - native.semitones) / 12)
-    if (gain === 1) {
+    const levelValue = gain * this.volume
+    if (levelValue === 1) {
       source.connect(destination)
     } else {
-      // 力度只在这一颗音上生效：单独一颗增益节点，接完即弃（采样自己会停）
+      // 力度 × 整架琴音量只在这一颗音上生效：单独一颗增益节点，接完即弃
       const level = ctx.createGain()
-      level.gain.value = Math.max(0, Math.min(1, gain))
+      level.gain.value = Math.max(0, Math.min(1, levelValue))
       source.connect(level).connect(destination)
     }
     source.start(when)

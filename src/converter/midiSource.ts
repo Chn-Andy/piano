@@ -31,6 +31,15 @@ export interface SourceTrack {
 /** 打击乐通道（GM 约定，0 起） */
 const PERCUSSION_CHANNEL = 9
 
+/**
+ * 「只作伴奏材料」的轨名约定（v1.6 试作，ADR-0018）。
+ * 名字等于此值的轨不参与玩家谱面（转换器跳过），但仍会被
+ * `buildAccompaniment` 当作第二条旋律轨取和声材料——用于「人声旋律 + 自动和弦」
+ * 这类源：玩家只弹旋律，和声由伴奏声部奏出（ADR-0016 的边界不变）。
+ * 现有三首 fixture 没有同名轨，行为不变。
+ */
+export const ACCOMPANIMENT_TRACK_NAME = 'accompaniment'
+
 /** 源曲调号 */
 export interface SourceKey {
   /** 调根音名（如 'D'、'F#'、'Bb'） */

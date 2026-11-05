@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BLACK_KEYS, laneForKey, WHITE_KEYS, WHITE_KEY_NOTES } from './keymap'
+import { BLACK_KEYS, MEDIUM_BLACK_KEYS, laneForKey, WHITE_KEYS, WHITE_KEY_NOTES } from './keymap'
 
 describe('键位映射（ADR-0006：白键一行 = 一个八度）', () => {
   it('白键 A S D F J K L 依次映射键位 0..6', () => {
@@ -22,8 +22,9 @@ describe('键位映射（ADR-0006：白键一行 = 一个八度）', () => {
     expect(laneForKey(' ')).toBeNull()
   })
 
-  it('黑键布局常量已按 ADR-0006 预留（W E T Y U，嵌于白键之间）', () => {
+  it('高级/默认黑键 W E T Y U；中等黑键 W E U I O（2026-11-05 右手右移）', () => {
     expect(BLACK_KEYS).toEqual(['W', 'E', 'T', 'Y', 'U'])
+    expect(MEDIUM_BLACK_KEYS).toEqual(['W', 'E', 'U', 'I', 'O'])
   })
 })
 
@@ -42,16 +43,19 @@ describe('谱面键区 → 物理键布局（layoutForKeys）', () => {
     })
   })
 
-  it('中等（12 键含黑键）：钢琴序 A W S E D F T J Y K U L，黑键嵌行', () => {
+  it('中等（12 键含黑键）：钢琴序 A W S E D F U J I K O L，右手黑键 U I O', () => {
     const layout = layoutForKeys([
       'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4',
-    ])
+    ], 'medium')
     expect(layout.keys.map((b) => b.key)).toEqual([
-      'A', 'W', 'S', 'E', 'D', 'F', 'T', 'J', 'Y', 'K', 'U', 'L',
+      'A', 'W', 'S', 'E', 'D', 'F', 'U', 'J', 'I', 'K', 'O', 'L',
     ])
     expect(layout.byPhysical('W')).toBe(1) // C#4
-    expect(layout.byPhysical('T')).toBe(6) // F#4
-    expect(layout.keys.filter((b) => b.isBlack).map((b) => b.key)).toEqual(['W', 'E', 'T', 'Y', 'U'])
+    expect(layout.byPhysical('U')).toBe(6) // F#4
+    expect(layout.byPhysical('I')).toBe(8) // G#4
+    expect(layout.byPhysical('O')).toBe(10) // A#4
+    expect(layout.byPhysical('T')).toBeNull() // 中等不再占用 T
+    expect(layout.keys.filter((b) => b.isBlack).map((b) => b.key)).toEqual([...MEDIUM_BLACK_KEYS])
   })
 
   it('高级（20 键 G3..D5）：核心八度仍钉在 A S D F J K L + W E T Y U，向两侧扩域', () => {

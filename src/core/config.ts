@@ -343,6 +343,9 @@ export const RATING = {
   OFFSET_ADVICE_MIN_HITS: 8,
 } as const
 
+/** 全轨局的玩家琴声音量（ADR-0019 修订）：0.72 ≈ −2.9dB，给原曲人声让位。 */
+export const FULL_TRACK_PIANO_GAIN = 0.72
+
 /* ── 伴奏（票 18，ADR-0016：伴奏只承担和声，旋律永远归玩家）──
  * 一张表管两件事：**声部数**（密度）与**每音增益**（力度），都随难度给——
  * 这是 ADR-0016 明写的「伴奏的密度与力度按难度给」。

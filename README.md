@@ -9,7 +9,10 @@ v1.4「演奏幻想」：屏幕顶边的**进度轨**、全程自动演奏的**�
 结算的**掌握度**徽记与「听我的演奏」**回放**（最后 20 秒，只在结算这一刻）。
 v1.5「双语 UI」：整套界面中英双语（[ADR-0017](docs/adr/0017-双语UI与全英文模式.md)），默认跟随浏览器语言、
 随时可从曲库角标或设置面板切换，英文模式全英文（标题、印章、倒计时一并英文化）；商店页与截图同步双语。
-三首公版曲目（卡农 / 致爱丽丝 / 春江花月夜）× 三档难度，纯网页零后端，
+v1.6「主题曲」：第四首《猪侠漫游记》的 medium/hard 播放原曲全轨（含人声，新混音：人声 +2.8dB、琴声 −2.9dB），
+战斗换成浅绿纸 + 亮粉的单曲主题色与水墨可爱的山贼动物墨妖；easy 仍是纯钢琴版
+（[ADR-0019](docs/adr/0019-主题曲全轨与主题皮肤.md)）。
+三首公版曲目（卡农 / 致爱丽丝 / 春江花月夜）加一首主题曲（[ADR-0018](docs/adr/0018-原创试作曲入库.md)）× 三档难度，纯网页零后端，
 一份静态产物双平台上架（GitHub Pages + itch.io，[ADR-0009](docs/adr/0009-技术底座与发布.md)）。
 
 门面截图见 [docs/screenshots/](docs/screenshots/)（曲库 / 战斗中 / 墨潮·纵深 / 余韵·剑鸣 / 终章·印章）。
@@ -19,15 +22,15 @@ v1.5「双语 UI」：整套界面中英双语（[ADR-0017](docs/adr/0017-双语
 ```bash
 npm install
 npm run dev        # 开发服务器；打开后点击或按任意键开始（浏览器要求用户手势后才能发声）
-npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.4 基线 349 项）
+npm test           # 核心模拟器 + 谱面契约 + 转换器结构测试（vitest，node 环境；v1.6 基线 392 项）
 npm run build      # 类型检查 + 产物输出到 dist/（相对路径 base，任意静态托管可直接部署）
 npm run preview    # 本地预览构建产物
-npm run charts     # 从公版 MIDI fixture 重新生成三难度谱面 JSON（src/charts/）
+npm run charts     # 从 MIDI fixture 重新生成三难度谱面 JSON（src/charts/）
 npm run pack:itch  # 构建 + 打包 itch.io HTML5 上传包 → 仓库根 xinqin-itch.zip（不入库）
 ```
 
-玩法：白键 `A S D F J K L` 对应一个八度 C4–B4，黑键 `W E T Y U` 嵌于其间，
-高级难度向两侧扩域（上排 `I O P` / 下排 `Z X C` 及黑键）。音符沿轨道落到判定线时按键，
+玩法：白键 `A S D F J K L` 对应一个八度 C4–B4；中等黑键 `W E U I O`（右手黑键落 `J K L` 正上方），
+高级黑键 `W E T Y U` 并向两侧扩域（上排 `I O P` / 下排 `Z X C` 及黑键）。音符沿轨道落到判定线时按键，
 判定窗口 Perfect ±50ms / Good ±120ms（`src/core/config.ts` 集中可调），
 超窗即 Miss 断连击。长按不触发重复判定；`Esc` 暂停。
 
@@ -128,9 +131,11 @@ done
 
 ## MIDI fixture 来源与授权
 
-`fixtures/`（仓库根；v1 三首，ADR-0008。构建期输入，不进发布产物）：
+`fixtures/`（仓库根；v1 三首 + v1.6 试作一首，ADR-0008 / ADR-0018。构建期输入，不进发布产物）：
 
 - `canon-in-d.mid` —— 帕赫贝尔《D 大调卡农》（Pachelbel 1653–1706，作品公版），Mutopia Project 标注 **Public Domain**：<https://www.mutopiaproject.org/cgibin/make-table.cgi?setdir=PachelbelJ/CanonInD>
 - `fur-elise.mid` —— 贝多芬《致爱丽丝》WoO 59（Beethoven 1770–1827，作品公版，双手钢琴编配），Mutopia Project 标注 **Public Domain**：<https://www.mutopiaproject.org/cgibin/make-table.cgi?setdir=BeethovenLv/WoO59/fur_Elise_WoO59>
 - `chun-jiang-hua-yue-ye.mid` —— 古曲《春江花月夜》（传统公版）；MIDI 为 Wang Jiayi 1997 年改编制谱（文件内文本事件 "Copyright _ 1997 by Wang Jiayi"），取自 figshare 数据集 [Music.Traditional.Chinese.MIDI](https://doi.org/10.6084/m9.figshare.5436022.v1)，整集授权 **CC BY 4.0**：<https://creativecommons.org/licenses/by/4.0/>（使用须署名该数据集）
+- `zhuxia-manyouji.mid` —— 《猪侠漫游记》（用户提供的原创歌曲，公开署名「心心念念」）。**非公版曲目**：MIDI 由视频音轨自动转谱（Demucs 人声分离 + pyin 基频 + 和弦模板估计），不是官方谱面；仅作 v1.6 主题曲，已随 v1.6 发布。
+- `assets/songs/zhuxia-manyouji.mp3` —— 主题曲全轨（Demucs 四轨合成，人声 +2.8dB、伴奏总线 0.64、全轨局琴声 0.72；160k，按谱面时间原点 2.776s 截 138.2s），署名「心心念念」；随发布产物进 `dist/songs/`。
 - 转换谱面产物 `src/charts/<曲目>/{easy,medium,hard}.json` 由 `npm run charts` 从上述 fixture 确定性生成，测试锁定产物与新鲜转换一致。

@@ -1,4 +1,4 @@
-# itch.io 发布粘贴单（心琴 v1.1）
+# itch.io 发布粘贴单（心琴 v1.6）
 
 打开 https://itch.io/game/new ，按下面顺序填。所有素材都在本目录。
 
@@ -28,7 +28,7 @@
 
 ## 4. 截图（按顺序上传；双语发布用 10 张，中文在前）
 
-中文 5 张（v1.1 起就在）：
+中文 5 张（曲库/战斗中已换 v1.6 图，其余 3 张沿用）：
 
 1. `shot-曲库.png`
 2. `shot-战斗中.png`
@@ -36,7 +36,7 @@
 4. `shot-余韵·剑鸣.png`
 5. `shot-终章·印章.png`
 
-英文 5 张（v1.5 新增，同目录 `en/`，源文件另存 `docs/screenshots/en/`）：
+英文 5 张（library/battle 已换 v1.6 图，其余 3 张沿用；同目录 `en/`，源文件另存 `docs/screenshots/en/`）：
 
 6. `en/library.png`
 7. `en/battle.png`
@@ -63,12 +63,11 @@
 - **Description** 用 `description-plain.txt`（中文）整段贴进富文本编辑器，
   空一行，再把 `description-en.txt`（英文）整段贴在同一页下半部分。
   两个小标题「玩法」「Keys」各自用 ¶ → Header 2。
-- **更新说明** 建议两句：`v1.5 双语界面：默认跟随系统语言，曲库角标与设置面板可随时切换（英文模式全英文）。` /
-  `v1.5 bilingual UI: follows your browser language, switchable any time from the library badge or settings.`
+- **更新说明** 用第 7 节的 v1.6 中英两段（主题曲 / Theme song）。
 
 ## 5. 上传包
 
-**`xinqin-itch.zip`**（0.92 MB，`index.html` 在包根）
+**`xinqin-itch.zip`**（3.4 MB / 8 个文件，`index.html` 在包根）
 勾选 **"This file will be played in the browser"**
 → Embed options 里把 viewport 设为 **1280 × 720**，勾 **Fullscreen button**
 
@@ -90,7 +89,8 @@ miss 不会直接扣血，但剑气扑空、火力变弱，墨潮就一步步压
 
 ### 玩法
 
-- **三首公版名曲 × 三档难度**：卡农 / 致爱丽丝 / 春江花月夜；
+- **三首公版名曲 + 一首主题曲 × 三档难度**：卡农 / 致爱丽丝 / 春江花月夜，以及《猪侠漫游记》——
+  medium / hard 带原曲全轨与浅绿粉主题、可爱山贼动物，easy 仍是纯钢琴版；
   简单 7 白键起步，中等 12 键加黑键，高级扩至 20 键双排手位。
 - **判定**：音符落到判定线时按键，Perfect ±50ms / Good ±120ms，
   Miss 断连击（不掉血——掉血只来自墨妖抵阵后的咬击）。
@@ -131,10 +131,16 @@ miss 不会直接扣血，但剑气扑空、火力变弱，墨潮就一步步压
 ## 7. 更新说明（Release notes）
 
 ```
-v1.1 战斗升级：墨妖成群推进、守线制（miss 不再直接扣血，威胁来自抵阵咬击）、
-剑气改为全屏纵深衰减 AoE、新增异色音符（寒/毒/爆）与连击蓄能的「琴心通明」，
-战斗数值全量重定标。三首公版曲目 × 三档难度、余韵与终章演出、本机纪录与评级、
-音画偏移校准。祝斗琴愉快。
+v1.6 主题曲：新增《猪侠漫游记》—— medium/hard 播放原曲全轨（新混音：人声 +2.8dB、
+琴声 −2.9dB），浅绿粉单曲主题、水墨可爱山贼动物与玫瑰刀疤野猪王墨主；easy 仍是纯钢琴版。
+曲库四首；中等黑键改为 W E U I O；战斗去掉音符拖尾与判定线硬阴影，琴阵线加「琴阵 / FRONT」标注。
+```
+
+```
+v1.6 Theme song: Pig Hero's Journey — Medium/Hard play the original full track
+(new mix: vocals +2.8 dB, piano −2.9 dB), with a pale-green/pink stage skin,
+cute ink bandit animals and a scarred boar-king Ink Sovereign; Easy stays piano-only.
+Four songs; Medium black keys are now W E U I O; note trails and hard shadows removed.
 ```
 
 ## 8. 可玩外链（可选）

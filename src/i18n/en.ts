@@ -26,6 +26,7 @@ export const en: Messages = {
   'library.heading': 'XinQin · Library',
   'library.keysHeading': (song, difficulty) => `Keys · ${song} (${difficulty})`,
   'library.bestNone': 'Not played',
+  'library.originalTag': 'Full',
   'library.combo': (combo) => `Combo ${combo}`,
   'library.hint': '↑↓ song · ←→ difficulty · Enter to fight · white keys A S D F J K L, black keys between them',
 
@@ -96,6 +97,7 @@ export const en: Messages = {
   'sustain.finale': 'Finale',
 
   'hud.vitality': 'Vitality',
+  'hud.frontLine': 'FRONT',
   'hud.qinxin': (hits, need) => `Heart ${hits}/${need}`,
   'hud.combo': (multiplier) => `Combo · Damage ×${multiplier}`,
   'hud.lastPhrase': 'Last phrase',

@@ -21,7 +21,7 @@ import type { DifficultyName } from '../src/core/chart'
 import { convertSong } from '../src/converter/convert'
 import { parseMidi } from '../src/converter/midiSource'
 
-/** 曲目注册表：MIDI fixture → 谱面产物（v1 三首，ADR-0008） */
+/** 曲目注册表：MIDI fixture → 谱面产物（v1 三首 + v1.6 试作，ADR-0008/0018） */
 const SONGS = [
   {
     id: 'canon-in-d',
@@ -40,6 +40,13 @@ const SONGS = [
     title: '春江花月夜',
     midi: 'fixtures/chun-jiang-hua-yue-ye.mid',
     dir: 'src/charts/chun-jiang',
+  },
+  {
+    // 草稿第四首（v1.6 试作）：视频音轨自动转谱，非官方谱面；见 README 与 ADR-0018。
+    id: 'zhuxia-manyouji',
+    title: '猪侠漫游记',
+    midi: 'fixtures/zhuxia-manyouji.mid',
+    dir: 'src/charts/zhuxia',
   },
 ] as const
 

@@ -14,6 +14,7 @@
  */
 
 import { AudioEngine } from './audio/engine'
+import { Backing } from './audio/backing'
 import { Piano } from './audio/piano'
 import { SONGS, songById } from './charts'
 import type { SongEntry } from './charts'
@@ -23,6 +24,7 @@ import { comboMultiplierFor } from './core/combat'
 import { ACCOMPANIMENT_PLAN, PLAYER_MAX_HP } from './core/config'
 import { LOCALES, LOCALE_NAMES, copyFor, resolveLocale } from './i18n'
 import type { Locale, Messages } from './i18n'
+import { FULL_TRACK_PIANO_GAIN } from './core/config'
 import { layoutForKeys, laneForKey, WHITE_KEY_NOTES } from './core/keymap'
 import { masteryFor, masteryFromRecord, masteryLine } from './core/mastery'
 import type { MasteryLevel } from './core/mastery'
@@ -134,6 +136,10 @@ const debugView: {
   replayNotes: number
   replayMisses: number
   replayPlaying: boolean
+  /** 全轨状态（v1.6 主题曲；普通歌恒为 none） */
+  backing: 'none' | 'loading' | 'ready' | 'playing' | 'failed' | 'stopped'
+  /** 当前战斗主题 id（null = 默认水墨） */
+  theme: string | null
 } = {
   phase: 'title',
   t: 0,
@@ -162,6 +168,8 @@ const debugView: {
   replayNotes: 0,
   replayMisses: 0,
   replayPlaying: false,
+  backing: 'none',
+  theme: null,
 }
 ;(window as unknown as { __xq: typeof debugView }).__xq = debugView
 
@@ -171,6 +179,9 @@ if (canvas === null || overlay === null) throw new Error('页面缺少 #stage �
 
 const engine = new AudioEngine()
 const piano = new Piano(() => engine.context, () => engine.musicBus)
+const backing = new Backing(() => engine.context, () => engine.musicBus)
+/** 全轨加载的世代号：换局/放弃后旧 promise 不许再启动 */
+let backingGeneration = 0
 const renderer = new Renderer(canvas)
 
 /** 本机持久化（浏览器本地存储；纯层经 KeyValueStore 注入） */
@@ -241,7 +252,7 @@ renderer.setCopy(copy, locale)
 let song: SongEntry = DEV_SONG ?? SONGS[0]!
 let difficulty: DifficultyName = DEV_DIFFICULTY
 let chart: Chart = song.charts[difficulty]
-let layout: KeyLayout = layoutForKeys(chart.meta?.keys ?? [])
+let layout: KeyLayout = layoutForKeys(chart.meta?.keys ?? [], difficulty)
 let sim = new Simulator(chart)
 
 let screen: Screen = 'title'
@@ -311,6 +322,8 @@ function resetDebugView(): void {
   debugView.replayNotes = 0
   debugView.replayMisses = 0
   debugView.replayPlaying = false
+  debugView.backing = 'none'
+  debugView.theme = null
 }
 
 /* ── 曲库选择与引导状态 ───────────────────────────────────────────── */
@@ -380,8 +393,12 @@ function showLibrary(): void {
     const cells = (['easy', 'medium', 'hard'] as const)
       .map((diff) => {
         const selected = index === libSongIndex && diff === libDifficulty ? ' selected' : ''
+        const original =
+          song.backing?.difficulties.includes(diff) === true
+            ? `<span class="diff-original">${copy['library.originalTag']}</span>`
+            : ''
         return `<button class="diff-cell${selected}" data-song="${index}" data-diff="${diff}">
-          <div class="diff-name">${difficultyLabel(diff)}</div>
+          <div class="diff-name">${difficultyLabel(diff)}${original}</div>
           <div class="diff-length">${formatClock(song.charts[diff].duration)}</div>${bestHtml(song.id, diff)}
         </button>`
       })
@@ -392,7 +409,7 @@ function showLibrary(): void {
     </div>`
   }).join('')
   const selectedChart = SONGS[libSongIndex]!.charts[libDifficulty]
-  const selectedLayout = layoutForKeys(selectedChart.meta?.keys ?? [])
+  const selectedLayout = layoutForKeys(selectedChart.meta?.keys ?? [], libDifficulty)
   // 角标写「将要切过去的语言」：中文界面显示 EN，英文界面显示「中」
   const other: Locale = locale === 'zh' ? 'en' : 'zh'
   showOverlay(`
@@ -531,6 +548,7 @@ async function proceedFromTitle(): Promise<void> {
   } catch (err) {
     console.error('音频初始化失败', err)
     starting = false
+    piano.setVolume(1)
     showFatal(copy['fatal.audio'])
     return
   }
@@ -663,6 +681,10 @@ function stopReplay(): void {
  */
 function startReplay(): void {
   stopReplay()
+  // 结算回放不压琴：全轨已停，听的是玩家自己的演奏
+  piano.setVolume(1)
+  // 回放只响本局的钢琴 + 伴奏：全轨在结算已停，这里再保险停一次
+  backing.stop(0)
   // 结算已经把音乐轨淡到 0，重放要先把总线抬回来——否则「听我的演奏」是无声的
   engine.restoreMusic()
   const plan = replayPlanFor(
@@ -701,6 +723,9 @@ function showSettlement(): void {
   // 终局即收声：伴奏是开局整首排好的，这里不清队列 + 淡出，它会一直演到曲末
   // （工单 21）。0.35 秒淡出，正在响的采样不会被硬掐断。
   engine.fadeOutMusic(0.35)
+  backing.stop(0.35)
+  piano.setVolume(1) // 结算回放/离开时琴声恢复原音量；全轨已经停了
+  if (debugView.backing === 'playing') debugView.backing = 'stopped'
   const summary = sim.summary()
   const won = outcomeResult === 'victory'
   const rating = settlement?.rating ?? 'C'
@@ -782,12 +807,23 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   if (starting) return
   if (screen === 'countdown' || screen === 'playing' || screen === 'paused') return
   starting = true
+  const backingConfig =
+    nextSong.backing !== undefined && nextSong.backing.difficulties.includes(nextDifficulty)
+      ? nextSong.backing
+      : null
+  const generation = ++backingGeneration
+  // 全轨局把玩家琴声压到 0.72（约 −2.9dB），原曲人声与伴奏才有位置浮上来；
+  // 纯钢琴局保持 1。只在新局开始时设定，沿用上一局的音量不会串。
+  piano.setVolume(backingConfig === null ? 1 : FULL_TRACK_PIANO_GAIN)
+  backing.stop(0)
   try {
     await engine.start()
     await piano.load()
+    debugView.backing = backingConfig === null ? 'none' : 'loading'
   } catch (err) {
     console.error('音频初始化失败', err)
     starting = false
+    piano.setVolume(1)
     showFatal(copy['fatal.audio'])
     return
   }
@@ -795,7 +831,7 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
   song = nextSong
   difficulty = nextDifficulty
   chart = song.charts[difficulty]
-  layout = layoutForKeys(chart.meta?.keys ?? [])
+  layout = layoutForKeys(chart.meta?.keys ?? [], difficulty)
   sim = new Simulator(chart)
   resetFeedback()
   resetDebugView()
@@ -824,6 +860,25 @@ async function beginBattle(nextSong: SongEntry, nextDifficulty: DifficultyName):
     engine.scheduleAhead(roundStartAt + monster.spawnAt, (w) => engine.lordEntrance(w))
   }
   scheduleAccompaniment()
+  if (backingConfig !== null) {
+    const config = backingConfig
+    void backing.load(`${import.meta.env.BASE_URL}${config.file}`).then((ok) => {
+      if (generation !== backingGeneration) return
+      if (!ok) {
+        debugView.backing = 'failed'
+        // 全轨没加载成功：降级纯钢琴版，把琴声还回原音量
+        piano.setVolume(1)
+        return
+      }
+      if (screen !== 'countdown' && screen !== 'playing' && screen !== 'paused') {
+        debugView.backing = 'ready'
+        return
+      }
+      const now = engine.now()
+      backing.start(Math.max(now, roundStartAt), config.gain, Math.max(0, now - roundStartAt))
+      debugView.backing = 'playing'
+    })
+  }
   if (AUTO === 'perfect') scheduleAutoplay()
 }
 
@@ -880,6 +935,8 @@ function resumeBattle(): void {
 function abandonBattle(): void {
   if (screen !== 'paused') return
   engine.cancelScheduled()
+  backing.stop(0.2)
+  piano.setVolume(1)
   engine.resume()
   held.clear()
   showLibrary()
@@ -888,6 +945,8 @@ function abandonBattle(): void {
 /** 终局后返回曲库（结算画面的 Esc / 按钮） */
 function returnToLibrary(): void {
   stopReplay() // 回放只在结算这一刻有效：离开即散（未到期的调度一并丢弃）
+  backing.stop(0.2)
+  piano.setVolume(1)
   engine.cancelScheduled()
   showLibrary()
 }
@@ -1152,15 +1211,17 @@ function backdropProgressFor(target: Chart): SongProgress {
   return backdropProgress.progress
 }
 
-/** 非战斗画面的背景板：所选谱面的空音场（键位轨道与判定线，无音符无怪物） */
+/** 非战斗画面的背景板：只画纸面。轨道/判定线/键位标签属于斗琴，不能透到菜单背后。 */
 function drawBackdrop(): void {
   const backdropChart =
     screen === 'library' ? SONGS[libSongIndex]!.charts[libDifficulty] : chart
+  // 主题色只属于战斗：背景板强制回默认水墨（ADR-0019 / D7）
+  renderer.setTheme(null, 0)
   renderer.draw({
     chart: backdropChart,
-    layout: layoutForKeys(backdropChart.meta?.keys ?? []).keys,
+    layout: layoutForKeys(backdropChart.meta?.keys ?? [], screen === 'library' ? libDifficulty : difficulty).keys,
     t: performance.now() / 1000,
-    // 背景板不画 HUD（draw(..., true)），进度与句提示不会被读到；给零值即可。
+    // 背景板只画纸面（draw(..., true, true)），进度与句提示不会被读到；给零值即可。
     // 按谱面记忆化：换曲/换难度才重算，菜单每帧不再重建（C1 的同一条口径）
     progress: backdropProgressFor(backdropChart),
     cue: null,
@@ -1182,13 +1243,13 @@ function drawBackdrop(): void {
     qinxinHits: 0,
     qinxins: [],
     sustains: [],
-  }, true)
+  }, true, true)
 }
 
 function frame(): void {
   requestAnimationFrame(frame)
 
-  if (screen === 'title' || screen === 'library' || screen === 'tutorial') {
+  if (screen === 'title' || screen === 'library' || screen === 'tutorial' || screen === 'settings') {
     if (screen === 'tutorial' && engine.now() >= tutorialDeadline) {
       finishTutorial() // 30 秒到点自动放行
       return
@@ -1236,6 +1297,19 @@ function frame(): void {
   debugView.progressRatio = Number(progress.ratio.toFixed(3))
   debugView.progressCue =
     cue === null ? null : cue.kind === 'final' ? copy['hud.lastPhrase'] : copy['hud.phrase'](cue.index, cue.count)
+
+  const theme = song.theme ?? null
+  let themeMix = 0
+  if (theme !== null) {
+    if (screen === 'countdown') {
+      const themeStart = roundStartAt - COUNT_BEATS * BEAT_SECONDS
+      themeMix = Math.max(0, Math.min(1, (now - themeStart) / 0.8))
+    } else {
+      themeMix = 1
+    }
+  }
+  renderer.setTheme(theme, themeMix)
+  debugView.theme = theme?.id ?? null
 
   renderer.draw({
     chart,

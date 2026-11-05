@@ -768,7 +768,7 @@ describe('胜局（歌毕 + 场上怪清完）', () => {
 })
 
 /* ── 定标性质：真实谱面产物（Seam 1 吃真实 JSON，锁「可胜可败」差距）──────
- * 工单 08 立规矩、工单 11 扩到三曲 × 三难度：完美与认真玩家守得住，
+ * 工单 08 立规矩、工单 11 扩到三曲 × 三难度、v1.6 试作加第四曲：完美与认真玩家守得住，
  * 普通玩家（三失其一）守不住，静置必被咬空。这四条是数值改动的红线——
  * 任何常量调整都要重新跑一遍这组性质。
  */
@@ -834,12 +834,13 @@ const CASUAL: PlayStyle = {
   offset: (id) => ((id % 5) * 0.02) - 0.02,
 }
 
-/** 三曲 × 三难度（工单 11：九张谱面全量性质） */
+/** 四曲 × 三难度（工单 11 九张 + v1.6 试作三张，共十二张全量性质） */
 const CHART_MATRIX = (
   [
     { dir: 'canon', title: '卡农' },
     { dir: 'fur-elise', title: '致爱丽丝' },
     { dir: 'chun-jiang', title: '春江花月夜' },
+    { dir: 'zhuxia', title: '猪侠漫游记' },
   ] as const
 ).flatMap((song) =>
   (['easy', 'medium', 'hard'] as const).map((difficulty) => ({
@@ -849,7 +850,7 @@ const CHART_MATRIX = (
   })),
 )
 
-describe.each(CHART_MATRIX)('定标性质：$title $difficulty（工单 11：三曲 × 三难度）', ({ dir, difficulty }) => {
+describe.each(CHART_MATRIX)('定标性质：$title $difficulty（工单 11：四曲 × 三难度）', ({ dir, difficulty }) => {
   it('完美弹奏：每个音都判出，终局胜利', () => {
     const chart = songChart(dir, difficulty)
     const sim = playThrough(chart, PERFECT)

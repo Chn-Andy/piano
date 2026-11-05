@@ -4,7 +4,7 @@
 
 玩法
 
-· 三首公版名曲 × 三档难度：卡农 / 致爱丽丝 / 春江花月夜；简单 7 白键起步，中等 12 键加黑键，高级扩至 20 键双排手位。
+· 三首公版名曲 + 一首主题曲 × 三档难度：卡农 / 致爱丽丝 / 春江花月夜，以及《猪侠漫游记》——medium/hard 带原曲全轨与浅绿粉主题、可爱山贼动物，easy 仍是纯钢琴版；简单 7 白键起步，中等 12 键加黑键，高级扩至 20 键双排手位。
 · 判定：音符落到判定线时按键，Perfect ±50ms / Good ±120ms，Miss 断连击（不掉血——掉血只来自墨妖抵阵后的咬击）。
 · 守线：墨妖成群自战场深处推进到琴阵，抵阵后每两拍咬一口（10 血）；剑气是全屏纵深衰减的 AoE——每次命中打击全场，前排吃满、后排递减。血空即败，撑到歌末并清完全场（含墨主）则胜。
 · 异色音符（约 6%）：寒音（全场击退并减速）、毒音（最前怪中毒掉血）、爆音（最前两只重击）——谱面里确定性编排，同曲重开布局一致。
@@ -16,8 +16,8 @@
 键位
 
 · 白键：A S D F J K L（一个八度 C4–B4）
-· 黑键：W E T Y U（嵌于白键之间，同真钢琴）
-· 高级难度向两侧扩域：上行 I O P，下行 Z X C
+· 中等黑键：W E U I O（右手黑键落 J K L 正上方）
+· 高级黑键：W E T Y U；并继续向两侧扩域：上行 I O P，下行 Z X C
 · Esc 暂停 / 返回；↑↓ 选曲，←→ 选难度，回车 开战
 
 仅支持桌面键盘（无触屏适配）。
@@ -25,5 +25,6 @@
 授权声明
 
 · 钢琴采样：Salamander Grand Piano V3，Alexander Holm 录制（Yamaha C5），授权 CC-BY 3.0：https://creativecommons.org/licenses/by/3.0/ · 原始发布 https://archive.org/details/SalamanderGrandPianoV3 · 本作使用其 v8 力度层 mp3 转制（Yotam Mann 托管版本）。
-· 曲目（均为公有领域乐谱）：帕赫贝尔《D 大调卡农》MIDI 来自 Mutopia Project（Public Domain）；贝多芬《致爱丽丝》WoO 59 MIDI 来自 Mutopia Project（Public Domain）；古曲《春江花月夜》MIDI 来自 Music.Traditional.Chinese.MIDI 数据集（CC BY 4.0，https://doi.org/10.6084/m9.figshare.5436022.v1）。
+· 曲目（前三首为公有领域乐谱）：帕赫贝尔《D 大调卡农》MIDI 来自 Mutopia Project（Public Domain）；贝多芬《致爱丽丝》WoO 59 MIDI 来自 Mutopia Project（Public Domain）；古曲《春江花月夜》MIDI 来自 Music.Traditional.Chinese.MIDI 数据集（CC BY 4.0，https://doi.org/10.6084/m9.figshare.5436022.v1）。
+· 《猪侠漫游记》：用户提供的原创歌曲，公开署名「心心念念」；本作使用其音轨与自动转谱，非公有领域。
 · 游戏本体（代码、谱面生成器、水墨渲染）：本项目原创。

@@ -322,6 +322,7 @@ const SONG_FIXTURES = [
   { id: 'canon-in-d', title: '卡农', dir: 'canon', midi: 'canon-in-d.mid' },
   { id: 'fur-elise', title: '致爱丽丝', dir: 'fur-elise', midi: 'fur-elise.mid' },
   { id: 'chun-jiang-hua-yue-ye', title: '春江花月夜', dir: 'chun-jiang', midi: 'chun-jiang-hua-yue-ye.mid' },
+  { id: 'zhuxia-manyouji', title: '猪侠漫游记', dir: 'zhuxia', midi: 'zhuxia-manyouji.mid' },
 ] as const
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const
 
@@ -334,7 +335,7 @@ function fixtureCharts(
   })
 }
 
-describe('三首真实 fixture：三难度谱面结构性质（工单 02/05 验收）', () => {
+describe('四首真实 fixture：三难度谱面结构性质（工单 02/05 验收）', () => {
   it('键位范围正确：简单 7 白键 / 中等 12 键 / 高级扩域，音符全部在界内', () => {
     for (const song of SONG_FIXTURES) {
       const charts = fixtureCharts(song)
@@ -479,7 +480,7 @@ describe('三首真实 fixture：三难度谱面结构性质（工单 02/05 验�
 /* ── 异色词缀编排（工单 09）：频率、确定性、间隔、和弦同色 ────────────── */
 
 describe('异色音符编排（Seam 2：确定性、频率 5–8%、最小间隔、和弦同色）', () => {
-  it('三首曲三难度都排得进异色音符，且频率落在票面的 5–8%', () => {
+  it('四首曲三难度都排得进异色音符，且频率落在票面的 5–8%', () => {
     for (const song of SONG_FIXTURES) {
       const charts = fixtureCharts(song)
 
@@ -605,6 +606,32 @@ describe('伴奏声部（工单 18）：从非主旋律材料生成，不代弹'
     expect(bass.every((midi) => midi % 12 === 7), '音级取自左手 G，不是旋律 C').toBe(true)
   })
 
+  it('轨名为 accompaniment 的轨只供和声：不进玩家谱面（ADR-0018）', () => {
+    const melodyNotes = Array.from({ length: 9 }, (_, i) => ({ time: i, midi: 72, track: 0 }))
+    const chordNotes = [0, 2, 4, 6, 8].flatMap((time) => [
+      { time, midi: 48, track: 1 },
+      { time, midi: 52, track: 1 },
+    ])
+    const source = (trackName: string): SourceSong => ({
+      bpm: 60,
+      key: null,
+      tracks: [
+        { index: 0, name: 'vocal', channel: 0, percussion: false, noteCount: melodyNotes.length },
+        { index: 1, name: trackName, channel: 1, percussion: false, noteCount: chordNotes.length },
+      ],
+      notes: [...melodyNotes, ...chordNotes],
+    })
+
+    const chart = convertChart(source('accompaniment'), 'medium', INFO)
+    expect(chart.notes).toHaveLength(9)
+    expect(new Set(chart.notes.map((note) => note.lane))).toEqual(new Set([0]))
+    expect(chart.accompaniment!.length, '和声材料仍然进伴奏').toBeGreaterThan(0)
+
+    // 同样的材料、不叫这个名字，照旧进玩家谱面（现有三首的行为）
+    const plain = convertChart(source('down:'), 'medium', INFO)
+    expect(plain.notes.length).toBeGreaterThan(chart.notes.length)
+  })
+
   it('密度按难度分档：简单每窗 1 声、中等 3 声、高级 4 声（不随表现动态加厚）', () => {
     // 和声窗口 = 2 拍；60bpm 下即 2 秒。取前六个窗口（都有材料）逐窗数声部
     const perWindow = (difficulty: 'easy' | 'medium' | 'hard'): number[] => {
@@ -671,7 +698,7 @@ describe('伴奏声部（工单 18）：从非主旋律材料生成，不代弹'
     }
   })
 
-  it('伴奏整首不断：任意 4 秒窗口里至少有一声（三首曲子，卡农走合成铺底）', () => {
+  it('伴奏整首不断：任意 4 秒窗口里至少有一声（四首曲子，卡农走合成铺底）', () => {
     for (const song of SONG_FIXTURES) {
       const charts = fixtureCharts(song)
       for (const difficulty of DIFFICULTIES) {

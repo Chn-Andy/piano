@@ -72,6 +72,8 @@ export interface Messages {
   'library.keysHeading': (song: string, difficulty: string) => string
   /** 该难度还没有纪录 */
   'library.bestNone': string
+  /** 主题曲的全轨难度小签（ADR-0019） */
+  'library.originalTag': string
   /** 纪录里的连击读数（曲库难度格与结算卡共用） */
   'library.combo': (combo: number) => string
   'library.hint': string
@@ -155,6 +157,7 @@ export interface Messages {
 
   /* ── 画布：状态读数（HUD 短名在这里登记） ────────────────── */
   'hud.vitality': string
+  'hud.frontLine': string
   /** 琴心蓄能槽顶的整数读数（HUD 用短名 Heart / 心） */
   'hud.qinxin': (hits: number, need: number) => string
   'hud.combo': (multiplier: string) => string

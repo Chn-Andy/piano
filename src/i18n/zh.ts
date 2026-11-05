@@ -23,6 +23,7 @@ export const zh: Messages = {
   'library.heading': '心琴 · 曲库',
   'library.keysHeading': (song, difficulty) => `键位图示 · ${song}（${difficulty}）`,
   'library.bestNone': '未挑战',
+  'library.originalTag': '原曲',
   'library.combo': (combo) => `连击 ${combo}`,
   'library.hint': '↑↓ 选曲 · ←→ 选难度 · 回车 开战 · 白键 A S D F J K L，黑键嵌于其间',
 
@@ -92,6 +93,7 @@ export const zh: Messages = {
   'sustain.finale': '终章',
 
   'hud.vitality': '气血',
+  'hud.frontLine': '琴阵',
   'hud.qinxin': (hits, need) => `琴心 ${hits}/${need}`,
   'hud.combo': (multiplier) => `连击 · 伤害 ×${multiplier}`,
   'hud.lastPhrase': '最后一句',
